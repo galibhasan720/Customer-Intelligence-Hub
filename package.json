@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "@supabase/server": "^1.4.1"
+    "@supabase/server": "^1.4.1",
+    "vite": "^8.1.5"
   }
 }
