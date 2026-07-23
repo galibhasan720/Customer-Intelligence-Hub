@@ -1,0 +1,16 @@
+name: Deploy Staging
+
+# Placeholder — enable after issue #52 (Vercel + HF Space smoke).
+# Do not auto-deploy until production env and secrets are configured.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deferred:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deferred until #52
+        run: |
+          echo "Staging deploy is deferred until Closes #52 work is complete."
+          echo "Configure Vercel + Hugging Face Space secrets before enabling this workflow."

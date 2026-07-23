@@ -1,0 +1,1 @@
+"""events domain package."""
