@@ -21,9 +21,27 @@ Canonical product scope: [`MVP/SeatFlow_MVP_Document.md`](MVP/SeatFlow_MVP_Docum
 - Node.js 20+ (`node -v`)
 - Python 3.11+ (`python --version`)
 - Git (`git --version`)
-- Docker Desktop (optional locally; needed to smoke-test the HF image)
+- Docker Desktop (for local Postgres)
 
-### Quick start
+### Quick start (recommended)
+
+From the **repo root**:
+
+```powershell
+npm run setup
+npm run dev
+```
+
+This starts:
+- Docker Postgres on `localhost:5432`
+- FastAPI on `http://127.0.0.1:8000` (docs: `/docs`)
+- Vite React on `http://localhost:3000`
+
+Demo accounts (seeded):
+- `customer@example.com` / `password123`
+- `organizer@example.com` / `password123`
+
+### Manual start (optional)
 
 **Backend**
 
@@ -33,6 +51,9 @@ python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 Copy-Item .env.example .env
+docker compose up -d postgres
+python -m scripts.migrations
+python -m scripts.seed_data
 uvicorn app.main:app --reload --port 8000
 ```
 

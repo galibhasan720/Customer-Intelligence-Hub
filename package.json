@@ -1,5 +1,21 @@
 {
-  "dependencies": {
-    "@supabase/server": "^1.4.1"
+  "name": "seat-flow",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SeatFlow monorepo — run everything with npm run dev",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm run dev --prefix frontend -- --host 127.0.0.1 --port 3000",
+    "build": "npm run build --prefix frontend",
+    "dev:api": "node scripts/run-api.mjs",
+    "db:up": "docker compose -f backend/docker-compose.yml up -d postgres",
+    "db:down": "docker compose -f backend/docker-compose.yml stop postgres",
+    "db:migrate": "node scripts/run-python.mjs -m scripts.migrations",
+    "db:seed": "node scripts/run-python.mjs -m scripts.seed_data"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "wait-on": "^8.0.3"
   }
 }

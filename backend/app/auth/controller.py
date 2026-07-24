@@ -1,14 +1,16 @@
-"""Authentication stubs (Feature 2)."""
+"""Auth controller."""
 
 from __future__ import annotations
 
+from sqlalchemy.orm import Session
+
+from app.auth.schemas import AuthResponse, LoginRequest, RegisterRequest
 from app.auth.service import AuthService
 
-_service = AuthService()
+
+def register(db: Session, payload: RegisterRequest) -> AuthResponse:
+    return AuthService(db).register(payload)
 
 
-def ping() -> dict[str, str]:
-    """Health-style stub used to verify MVC wiring."""
-    payload = _service.ping()
-    payload["layer"] = "controller"
-    return payload
+def login(db: Session, payload: LoginRequest) -> AuthResponse:
+    return AuthService(db).login(payload)

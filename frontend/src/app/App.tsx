@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
+import { api, ApiError, formatEventDate, type ApiBooking, type ApiEvent, type ApiHall, type ApiHallBooking, type ApiSeat, type ApiVenue } from "../lib/api";
+import { clearSession, getStoredUser, getToken, setSession, type AuthUser } from "../lib/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +20,7 @@ type View =
 
 type SeatStatus = "available" | "selected" | "held" | "reserved" | "sold" | "vip-available" | "accessible" | "companion" | "blocked";
 
-interface Seat { id: string; row: string; number: number; status: SeatStatus; price: number; category: "VIP" | "Standard" | "Accessible" | "Companion"; }
+interface Seat { id: string; apiId?: string; row: string; number: number; status: SeatStatus; price: number; category: "VIP" | "Standard" | "Accessible" | "Companion"; }
 interface SeatFlowEvent { id: string; title: string; category: string; date: string; time: string; venue: string; city: string; priceFrom: number; priceTo: number; totalSeats: number; soldSeats: number; image: string; description: string; tags: string[]; status?: "draft" | "published"; }
 interface Booking { id: string; eventId: string; eventTitle: string; date: string; venue: string; seats: string[]; total: number; status: "Confirmed" | "Pending" | "Cancelled" | "Expired"; bookedAt: string; guestName?: string; guestEmail?: string; }
 interface Notification { id: string; type: "booking_confirmed" | "booking_cancelled" | "event_reminder" | "event_updated" | "hold_expired" | "payment_processed" | "hall_booking_confirmed" | "new_event"; title: string; message: string; timestamp: string; read: boolean; }
@@ -27,6 +29,119 @@ interface Hall { id: string; venueId: string; name: string; capacity: number; ar
 interface HallBooking { id: string; venueId: string; hallId: string; venueName: string; hallName: string; date: string; startTime: string; endTime: string; durationType: "hourly" | "half-day" | "full-day"; purpose: string; guestCount: number; addOns: string[]; total: number; status: "Confirmed" | "Pending" | "Cancelled"; bookedAt: string; contactName: string; contactPhone: string; contactEmail?: string; }
 interface OrganizerProfile { name: string; organizationName: string; bio: string; phone: string; email: string; website: string; city: string; address: string; verified: boolean; eventsCreated: number; totalBookings: number; rating: number; memberSince: string; }
 interface TicketTier { name: string; price: number; quantity: number; }
+
+function mapApiEvent(e: ApiEvent): SeatFlowEvent {
+  const { date, time } = formatEventDate(e.event_date);
+  return {
+    id: e.id,
+    title: e.title,
+    category: e.category,
+    date,
+    time,
+    venue: e.venue,
+    city: e.city || "Dhaka",
+    priceFrom: Number(e.price_from),
+    priceTo: Number(e.price_to),
+    totalSeats: e.total_seats,
+    soldSeats: e.sold_seats,
+    image: e.image || "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800&q=80",
+    description: e.description || "",
+    tags: e.tags?.length ? e.tags : [e.category],
+    status: e.status === "Draft" ? "draft" : "published",
+  };
+}
+
+function mapApiSeat(s: ApiSeat): Seat {
+  const available = s.status === "Available";
+  const status: SeatStatus =
+    s.status === "Booked" || s.status === "Locked"
+      ? "sold"
+      : s.category === "VIP"
+        ? "vip-available"
+        : "available";
+  const numMatch = s.seat_number.match(/(\d+)/);
+  return {
+    id: s.seat_number,
+    apiId: s.id,
+    row: s.seat_number.split("-")[0] || "S",
+    number: numMatch ? Number(numMatch[1]) : 0,
+    status: available ? status : "sold",
+    price: s.price,
+    category: s.category === "VIP" ? "VIP" : "Standard",
+  };
+}
+
+function mapApiBooking(b: ApiBooking): Booking {
+  const { date } = formatEventDate(b.event_date);
+  return {
+    id: b.id,
+    eventId: b.event_id,
+    eventTitle: b.event_title,
+    date,
+    venue: b.venue,
+    seats: b.seats,
+    total: b.total,
+    status: b.status as Booking["status"],
+    bookedAt: formatEventDate(b.booked_at).date,
+  };
+}
+
+function mapApiVenue(v: ApiVenue): Venue {
+  return {
+    id: v.id,
+    name: v.name,
+    type: v.type,
+    address: v.address,
+    city: v.city,
+    image: v.image,
+    rating: Number(v.rating),
+    reviewCount: v.review_count,
+    totalHalls: v.total_halls,
+    priceFrom: Number(v.price_from),
+    description: v.description || "",
+    amenities: v.amenities || [],
+  };
+}
+
+function mapApiHall(h: ApiHall): Hall {
+  return {
+    id: h.id,
+    venueId: h.venue_id,
+    name: h.name,
+    capacity: h.capacity,
+    areaSqft: h.area_sqft,
+    floor: h.floor,
+    pricePerHour: Number(h.price_per_hour),
+    priceHalfDay: Number(h.price_half_day),
+    priceFullDay: Number(h.price_full_day),
+    amenities: h.amenities || [],
+    image: h.image,
+    available: h.available,
+  };
+}
+
+function mapApiHallBooking(b: ApiHallBooking): HallBooking {
+  return {
+    id: b.id,
+    venueId: b.venue_id,
+    hallId: b.hall_id,
+    venueName: b.venue_name,
+    hallName: b.hall_name,
+    date: typeof b.booking_date === "string" ? b.booking_date : String(b.booking_date),
+    startTime: b.start_time,
+    endTime: b.end_time,
+    durationType: (b.duration_type as HallBooking["durationType"]) || "full-day",
+    purpose: b.purpose,
+    guestCount: b.guest_count,
+    addOns: b.add_ons || [],
+    total: Number(b.total),
+    status: (b.status as HallBooking["status"]) || "Confirmed",
+    bookedAt: formatEventDate(b.booked_at).date,
+    contactName: b.contact_name,
+    contactPhone: b.contact_phone,
+    contactEmail: b.contact_email || undefined,
+  };
+}
 
 // ─── Category Groups ──────────────────────────────────────────────────────────
 
@@ -328,17 +443,17 @@ function EditEventBookingDrawer({booking,onSave,onClose}:{booking:Booking;onSave
 
 // ─── Edit Hall Booking Drawer ─────────────────────────────────────────────────
 
-function EditHallBookingDrawer({booking,onSave,onClose}:{booking:HallBooking;onSave:(b:HallBooking)=>void;onClose:()=>void}) {
+function EditHallBookingDrawer({booking,halls,onSave,onClose}:{booking:HallBooking;halls:Hall[];onSave:(b:HallBooking)=>void;onClose:()=>void}) {
   const [date,setDate]=useState(booking.date), [durationType,setDurationType]=useState(booking.durationType);
   const [purpose,setPurpose]=useState(booking.purpose), [guestCount,setGuestCount]=useState(booking.guestCount);
   const [addOns,setAddOns]=useState<string[]>(booking.addOns);
   const [contactName,setContactName]=useState(booking.contactName), [contactPhone,setContactPhone]=useState(booking.contactPhone), [contactEmail,setContactEmail]=useState(booking.contactEmail||"");
-  const hall=HALLS.find(h=>h.id===booking.hallId);
+  const hall=halls.find(h=>h.id===booking.hallId);
   const basePrice=durationType==="full-day"?(hall?.priceFullDay||0):durationType==="half-day"?(hall?.priceHalfDay||0):(hall?.pricePerHour||0)*3;
   const addOnTotal=addOns.reduce((sum,id)=>{const ao=ADD_ON_OPTIONS.find(a=>a.id===id);if(!ao)return sum;return sum+(ao.unit==="per person"?ao.price*guestCount:ao.price);},0);
   const total=basePrice+addOnTotal;
   const toggleAddOn=(id:string)=>setAddOns(prev=>prev.includes(id)?prev.filter(a=>a!==id):[...prev,id]);
-  const save=()=>{if(!contactName.trim()){toast.error("Contact name is required");return;}onSave({...booking,date,durationType,purpose,guestCount,addOns,total,contactName,contactPhone,contactEmail});toast.success("Hall booking updated!");onClose();};
+  const save=async()=>{if(!contactName.trim()){toast.error("Contact name is required");return;}try{await onSave({...booking,date,durationType,purpose,guestCount,addOns,total,contactName,contactPhone,contactEmail});onClose();}catch{/* parent toasts */}};
   const inp="w-full px-4 py-2.5 rounded-lg glass-input focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm";
   return (
     <>
@@ -416,10 +531,36 @@ function NotificationPanel({notifications,onClose,onMarkAllRead,onClearAll,onMar
 
 // ─── Auth Modal ───────────────────────────────────────────────────────────────
 
-function AuthModal({onClose,onAuth}:{onClose:()=>void;onAuth:(name:string)=>void}) {
+function AuthModal({onClose,onAuth}:{onClose:()=>void;onAuth:(user:AuthUser)=>void}) {
   const [tab,setTab]=useState<"signin"|"register">("signin");
   const [name,setName]=useState(""), [email,setEmail]=useState(""), [password,setPassword]=useState(""), [confirm,setConfirm]=useState(""), [error,setError]=useState("");
-  const submit=()=>{if(tab==="signin"){if(!email||!password){setError("Please fill in all fields.");return;}const n=email.split("@")[0];onAuth(n);toast.success(`Welcome back, ${n}!`);}else{if(!name||!email||!password){setError("Please fill in all fields.");return;}if(password!==confirm){setError("Passwords do not match.");return;}onAuth(name);toast.success(`Welcome, ${name}!`);}onClose();};
+  const [role,setRole]=useState<"customer"|"organizer">("customer");
+  const [busy,setBusy]=useState(false);
+  const submit=async()=>{
+    setError("");
+    try{
+      setBusy(true);
+      if(tab==="signin"){
+        if(!email||!password){setError("Please fill in all fields.");return;}
+        const res=await api.login({email,password});
+        setSession(res.access_token,{id:res.user.id,full_name:res.user.full_name,email:res.user.email,role:res.user.role});
+        onAuth({id:res.user.id,full_name:res.user.full_name,email:res.user.email,role:res.user.role});
+        toast.success(`Welcome back, ${res.user.full_name}!`);
+      }else{
+        if(!name||!email||!password){setError("Please fill in all fields.");return;}
+        if(password!==confirm){setError("Passwords do not match.");return;}
+        const res=await api.register({full_name:name,email,password,role});
+        setSession(res.access_token,{id:res.user.id,full_name:res.user.full_name,email:res.user.email,role:res.user.role});
+        onAuth({id:res.user.id,full_name:res.user.full_name,email:res.user.email,role:res.user.role});
+        toast.success(`Welcome, ${res.user.full_name}!`);
+      }
+      onClose();
+    }catch(err){
+      setError(err instanceof ApiError?err.message:"Authentication failed");
+    }finally{
+      setBusy(false);
+    }
+  };
   const inp="w-full px-4 py-2.5 rounded-lg glass-input focus:outline-none focus:ring-2 focus:ring-primary text-sm";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md" onClick={onClose}>
@@ -427,15 +568,25 @@ function AuthModal({onClose,onAuth}:{onClose:()=>void;onAuth:(name:string)=>void
         <div className="bg-gradient-to-r from-blue-600/90 to-indigo-700/90 backdrop-blur-md px-6 py-5 text-white">
           <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-2"><div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center"><Ticket size={14} className="text-white"/></div><span className="font-extrabold" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>SeatFlow</span></div><button onClick={onClose} className="text-white/70 hover:text-white"><X size={18}/></button></div>
           <p className="text-blue-100 text-sm mt-2">{tab==="signin"?"Sign in to manage your bookings":"Create your account to get started"}</p>
+          <p className="text-blue-200/80 text-xs mt-1">Demo: customer@example.com / password123</p>
         </div>
         <div className="flex border-b border-white/20">{(["signin","register"] as const).map(t=><button key={t} onClick={()=>{setTab(t);setError("");}} className={cx("flex-1 py-3 text-sm font-semibold transition-colors",tab===t?"text-primary border-b-2 border-primary":"text-muted-foreground hover:text-foreground")}>{t==="signin"?"Sign In":"Register"}</button>)}</div>
         <div className="p-6 space-y-4">
           {tab==="register"&&<div><label className="block text-sm font-semibold text-foreground mb-1.5">Full Name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Ahmed Rahman" className={inp}/></div>}
-          <div><label className="block text-sm font-semibold text-foreground mb-1.5">Email Address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="ahmed@example.com" className={inp}/></div>
-          <div><div className="flex justify-between mb-1.5"><label className="text-sm font-semibold text-foreground">Password</label>{tab==="signin"&&<button className="text-xs text-primary hover:underline">Forgot?</button>}</div><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="••••••••" className={inp}/></div>
+          <div><label className="block text-sm font-semibold text-foreground mb-1.5">Email Address</label><input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="customer@example.com" className={inp}/></div>
+          <div><div className="flex justify-between mb-1.5"><label className="text-sm font-semibold text-foreground">Password</label></div><input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="••••••••" className={inp}/></div>
           {tab==="register"&&<div><label className="block text-sm font-semibold text-foreground mb-1.5">Confirm Password</label><input value={confirm} onChange={e=>setConfirm(e.target.value)} type="password" placeholder="••••••••" className={inp}/></div>}
+          {tab==="register"&&(
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-1.5">Account type</label>
+              <select value={role} onChange={e=>setRole(e.target.value as "customer"|"organizer")} className={inp}>
+                <option value="customer">Customer</option>
+                <option value="organizer">Organizer</option>
+              </select>
+            </div>
+          )}
           {error&&<p className="text-xs text-destructive flex items-center gap-1.5"><AlertCircle size={12}/>{error}</p>}
-          <motion.button whileTap={{scale:0.97}} onClick={submit} className="w-full bg-primary text-white py-3 rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors">{tab==="signin"?"Sign In":"Create Account"}</motion.button>
+          <motion.button whileTap={{scale:0.97}} disabled={busy} onClick={submit} className="w-full bg-primary text-white py-3 rounded-xl font-bold text-sm hover:bg-blue-700 transition-colors disabled:opacity-60">{busy?"Please wait…":tab==="signin"?"Sign In":"Create Account"}</motion.button>
         </div>
       </motion.div>
     </div>
@@ -592,15 +743,71 @@ function EventDetailView({event,onSelectSeats,onBack}:{event:SeatFlowEvent;onSel
 // ─── Seat Selection View ──────────────────────────────────────────────────────
 
 function SeatSelectionView({event,onContinue,onBack}:{event:SeatFlowEvent;onContinue:(seats:Seat[])=>void;onBack:()=>void}) {
-  const [seats,setSeats]=useState<Seat[]>(generateSeats);
+  const [seats,setSeats]=useState<Seat[]>([]);
+  const [loading,setLoading]=useState(true);
   const [hoveredId,setHoveredId]=useState<string|null>(null);
-  const [tooltipPos,setTooltipPos]=useState({x:0,y:0});
   const [showHoldModal,setShowHoldModal]=useState(false);
   const selected=seats.filter(s=>s.status==="selected");
   const total=selected.reduce((sum,s)=>sum+s.price,0);
-  const toggleSeat=useCallback((id:string)=>{setSeats(prev=>prev.map(s=>{if(s.id!==id)return s;if(s.status==="selected"){const r:SeatStatus=s.category==="VIP"?"vip-available":s.category==="Accessible"?"accessible":s.category==="Companion"?"companion":"available";return{...s,status:r};}if(["available","vip-available","accessible","companion"].includes(s.status)){if(selected.length>=6)return s;return{...s,status:"selected"};}return s;}));},[selected.length]);
-  const releaseSeat=useCallback(()=>{setSeats(prev=>prev.map(s=>{if(s.status!=="selected")return s;const r:SeatStatus=s.category==="VIP"?"vip-available":s.category==="Accessible"?"accessible":s.category==="Companion"?"companion":"available";return{...s,status:r};}));setShowHoldModal(false);},[]);
-  const rows=["A","B","C","D","E","F","G","H","I","J"];
+
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        setLoading(true);
+        const rows=await api.listSeats(event.id);
+        if(!cancelled) setSeats(rows.map(mapApiSeat));
+      }catch(err){
+        toast.error(err instanceof ApiError?err.message:"Failed to load seats");
+        if(!cancelled) setSeats([]);
+      }finally{
+        if(!cancelled) setLoading(false);
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[event.id]);
+
+  const toggleSeat=useCallback((id:string)=>{setSeats(prev=>{
+    const currentSelected=prev.filter(s=>s.status==="selected").length;
+    return prev.map(s=>{
+      if(s.id!==id)return s;
+      if(s.status==="selected"){
+        const r:SeatStatus=s.category==="VIP"?"vip-available":"available";
+        return{...s,status:r};
+      }
+      if(["available","vip-available"].includes(s.status)){
+        if(currentSelected>=6)return s;
+        return{...s,status:"selected"};
+      }
+      return s;
+    });
+  });},[]);
+  const releaseSeat=useCallback(()=>{setSeats(prev=>prev.map(s=>{if(s.status!=="selected")return s;const r:SeatStatus=s.category==="VIP"?"vip-available":"available";return{...s,status:r};}));setShowHoldModal(false);},[]);
+
+  const vip=seats.filter(s=>s.category==="VIP");
+  const standard=seats.filter(s=>s.category==="Standard");
+
+  const renderSeat=(seat:Seat)=>(
+    <button
+      key={seat.id}
+      type="button"
+      disabled={!["available","vip-available","selected"].includes(seat.status)}
+      onClick={()=>toggleSeat(seat.id)}
+      onMouseEnter={()=>setHoveredId(seat.id)}
+      onMouseLeave={()=>setHoveredId(null)}
+      className={cx(
+        "w-10 h-10 rounded-md text-[10px] font-bold border transition-colors",
+        seat.status==="selected"&&"bg-green-500 text-white border-green-600",
+        seat.status==="vip-available"&&"bg-violet-100 text-violet-700 border-violet-300 hover:bg-violet-200",
+        seat.status==="available"&&"bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200",
+        seat.status==="sold"&&"bg-slate-300 text-slate-500 border-slate-400 cursor-not-allowed opacity-60",
+      )}
+      title={`${seat.id} · ${seat.category} · ৳${seat.price}`}
+    >
+      {seat.id}
+    </button>
+  );
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
       {showHoldModal&&<HoldModal seats={selected} total={total} onProceed={()=>{setShowHoldModal(false);onContinue(selected);}} onRelease={releaseSeat}/>}
@@ -610,20 +817,23 @@ function SeatSelectionView({event,onContinue,onBack}:{event:SeatFlowEvent;onCont
           <div className="glass rounded-xl p-5 shadow-xl">
             <div className="mb-4"><h2 className="font-bold text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{event.title}</h2><p className="text-sm text-muted-foreground">{event.venue} · {event.date}</p></div>
             <div className="w-full bg-gradient-to-b from-slate-700 to-slate-800 text-white text-center py-2 rounded-xl text-xs font-semibold tracking-widest mb-6 shadow-md">STAGE / SCREEN</div>
-            <div className="overflow-x-auto">
-              <svg viewBox={`0 0 ${12*32+40} ${rows.length*32+10}`} className="w-full" style={{minWidth:420}}>
-                {rows.map((row,ri)=>(
-                  <g key={row}>
-                    <text x="14" y={ri*32+20} textAnchor="middle" fontSize="11" fill="#94A3B8" fontWeight="600">{row}</text>
-                    {Array.from({length:12},(_,ci)=>{
-                      const id=`${row}${ci+1}`,seat=seats.find(s=>s.id===id)!,{fill,stroke,interactive}=seatFill(seat.status),x2=40+ci*32+12,y2=ri*32+12;
-                      return(<g key={id}><rect x={x2-10} y={y2-10} width={22} height={22} rx={4} fill={fill} stroke={stroke} strokeWidth={1.5} style={{cursor:interactive?"pointer":"not-allowed",transition:"fill 0.12s"}} onClick={()=>interactive&&toggleSeat(id)} onMouseEnter={e=>{setHoveredId(id);const r=(e.target as SVGRectElement).getBoundingClientRect();setTooltipPos({x:r.left+r.width/2,y:r.top});}} onMouseLeave={()=>setHoveredId(null)}/>{seat.status==="selected"&&<text x={x2+1} y={y2+4} textAnchor="middle" fontSize="10" fill="white" pointerEvents="none">✓</text>}</g>);
-                    })}
-                  </g>
-                ))}
-              </svg>
-            </div>
-            {hoveredId&&(()=>{const seat=seats.find(s=>s.id===hoveredId);if(!seat)return null;return<div className="fixed z-50 bg-slate-900/90 backdrop-blur-sm text-white text-xs rounded-xl px-3 py-2 shadow-xl pointer-events-none" style={{left:tooltipPos.x,top:tooltipPos.y-68,transform:"translateX(-50%)"}}>  <p className="font-bold">Seat {seat.id}</p><p className="text-slate-300">{seat.category} · ৳{seat.price}</p><p className="text-slate-400 capitalize">{seat.status.replace("-"," ")}</p></div>;})()}
+            {loading?(<p className="text-sm text-muted-foreground py-10 text-center">Loading seats…</p>):seats.length===0?(<p className="text-sm text-muted-foreground py-10 text-center">No seats found for this event.</p>):(
+              <div className="space-y-6">
+                {vip.length>0&&(
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 mb-2">VIP</p>
+                    <div className="flex flex-wrap gap-2">{vip.map(renderSeat)}</div>
+                  </div>
+                )}
+                {standard.length>0&&(
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Standard</p>
+                    <div className="flex flex-wrap gap-2">{standard.map(renderSeat)}</div>
+                  </div>
+                )}
+              </div>
+            )}
+            {hoveredId&&(()=>{const seat=seats.find(s=>s.id===hoveredId);if(!seat)return null;return<div className="mt-4 text-xs text-muted-foreground">Seat {seat.id} · {seat.category} · ৳{seat.price} · {seat.status}</div>;})()}
             <div className="mt-5 pt-4 border-t border-white/20"><SeatLegend/></div>
           </div>
         </div>
@@ -632,14 +842,13 @@ function SeatSelectionView({event,onContinue,onBack}:{event:SeatFlowEvent;onCont
             <h3 className="font-bold text-foreground mb-4" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Booking Summary</h3>
             {selected.length===0?(<div className="text-center py-8 text-muted-foreground"><Ticket size={28} className="mx-auto mb-2 opacity-30"/><p className="text-sm">Click seats to select them</p><p className="text-xs mt-1">Up to 6 seats per booking</p></div>):(
               <motion.div variants={listVariants} initial="hidden" animate="visible" className="space-y-2 mb-4">
-                {selected.map(s=><motion.div key={s.id} variants={itemVariants} className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded bg-green-500 text-white flex items-center justify-center text-xs font-bold">{s.id}</div><span className="text-muted-foreground">{s.category}</span></div><span className="font-semibold">৳{s.price}</span></motion.div>)}
+                {selected.map(s=><motion.div key={s.id} variants={itemVariants} className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><div className="w-7 h-7 rounded bg-green-500 text-white flex items-center justify-center text-[9px] font-bold">{s.id}</div><span className="text-muted-foreground">{s.category}</span></div><span className="font-semibold">৳{s.price}</span></motion.div>)}
                 <div className="border-t border-white/20 pt-3 flex justify-between font-bold text-sm"><span>Total</span><span className="text-primary">৳{total}</span></div>
               </motion.div>
             )}
             <motion.button whileHover={selected.length>0?{scale:1.02}:{}} whileTap={selected.length>0?{scale:0.97}:{}} disabled={selected.length===0} onClick={()=>selected.length>0&&setShowHoldModal(true)} className={cx("w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",selected.length>0?"bg-primary text-white hover:bg-blue-700 shadow-lg":"bg-white/30 dark:bg-white/08 text-muted-foreground cursor-not-allowed")}>
               {selected.length>0?<><Clock size={15}/> Hold & Continue</>:"Select Seats to Continue"}
             </motion.button>
-            {selected.length>0&&<p className="text-xs text-muted-foreground text-center mt-2 flex items-center justify-center gap-1"><Clock size={11}/> Seats held for 10 minutes</p>}
           </div>
         </div>
       </div>
@@ -702,9 +911,96 @@ function PaymentView({event,seats,name,onPay,onBack}:{event:SeatFlowEvent;seats:
   );
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function downloadEventTicket(opts: {
+  ref: string;
+  eventTitle: string;
+  date: string;
+  time: string;
+  venue: string;
+  guestName: string;
+  seats: string[];
+  total: number;
+}): void {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>SeatFlow Ticket — ${escapeHtml(opts.ref)}</title>
+  <style>
+    body{font-family:Georgia,serif;background:#f1f5f9;margin:0;padding:32px;color:#0f172a}
+    .ticket{max-width:480px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(15,23,42,.12)}
+    .head{background:linear-gradient(135deg,#1d4ed8,#4338ca);color:#fff;padding:24px}
+    .head p{margin:0 0 6px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
+    .head h1{margin:0;font-size:22px}
+    .badge{display:inline-block;margin-top:12px;background:#22c55e;color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px}
+    .body{padding:24px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+    .label{font-size:11px;color:#64748b;margin:0 0 4px}
+    .value{font-size:14px;font-weight:700;margin:0}
+    .seats{display:flex;flex-wrap:wrap;gap:6px}
+    .seat{background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;padding:4px 8px;border-radius:6px}
+    .total{border-top:1px dashed #cbd5e1;padding-top:16px;display:flex;justify-content:space-between;align-items:center;font-weight:700}
+    .total span:last-child{color:#1d4ed8;font-size:20px}
+    .foot{text-align:center;font-size:12px;color:#94a3b8;margin-top:24px}
+  </style>
+</head>
+<body>
+  <div class="ticket">
+    <div class="head">
+      <p>Booking reference</p>
+      <h1>${escapeHtml(opts.ref)}</h1>
+      <span class="badge">Confirmed</span>
+    </div>
+    <div class="body">
+      <div class="grid">
+        <div><p class="label">Event</p><p class="value">${escapeHtml(opts.eventTitle)}</p></div>
+        <div><p class="label">Date &amp; time</p><p class="value">${escapeHtml(opts.date)} · ${escapeHtml(opts.time)}</p></div>
+        <div><p class="label">Venue</p><p class="value">${escapeHtml(opts.venue)}</p></div>
+        <div><p class="label">Guest</p><p class="value">${escapeHtml(opts.guestName || "Guest")}</p></div>
+      </div>
+      <p class="label">Seats</p>
+      <div class="seats">${opts.seats.map((s) => `<span class="seat">${escapeHtml(s)}</span>`).join("") || `<span class="seat">—</span>`}</div>
+      <div class="total"><span>Total paid</span><span>৳${opts.total.toLocaleString()}</span></div>
+    </div>
+  </div>
+  <p class="foot">SeatFlow · Show this ticket at the entrance</p>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `SeatFlow-Ticket-${opts.ref}.html`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function ConfirmationView({event,seats,name,onDone}:{event:SeatFlowEvent;seats:Seat[];name:string;onDone:()=>void}) {
   const ref=useRef(`BK-${Math.floor(10000+Math.random()*90000)}`).current;
   const total=seats.reduce((s,seat)=>s+seat.price,0);
+  const handleDownload=()=>{
+    downloadEventTicket({
+      ref,
+      eventTitle:event.title,
+      date:event.date,
+      time:event.time,
+      venue:event.venue,
+      guestName:name,
+      seats:seats.map(s=>s.id),
+      total,
+    });
+    toast.success("Ticket downloaded");
+  };
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
       <div className="flex items-center justify-center mb-8"><BookingStepper step={4}/></div>
@@ -720,16 +1016,16 @@ function ConfirmationView({event,seats,name,onDone}:{event:SeatFlowEvent;seats:S
           <div className="flex items-center justify-center py-4 border-t border-white/20 border-dashed"><div className="text-center"><QRCode/><p className="text-xs text-muted-foreground mt-2">Scan at entrance</p></div></div>
         </div>
       </motion.div>
-      <div className="flex gap-3 mt-6"><button className="flex-1 flex items-center justify-center gap-2 py-2.5 glass rounded-xl text-sm font-semibold text-foreground hover:bg-white/40 transition-colors"><Download size={15}/> Download Ticket</button><motion.button whileTap={{scale:0.97}} onClick={onDone} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-lg">Back to Events</motion.button></div>
+      <div className="flex gap-3 mt-6"><motion.button whileTap={{scale:0.97}} type="button" onClick={handleDownload} className="flex-1 flex items-center justify-center gap-2 py-2.5 glass rounded-xl text-sm font-semibold text-foreground hover:bg-white/40 transition-colors"><Download size={15}/> Download Ticket</motion.button><motion.button whileTap={{scale:0.97}} onClick={onDone} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors shadow-lg">Back to Events</motion.button></div>
     </div>
   );
 }
 
 // ─── Venue Browse + Detail + Hall Booking + Hall Confirmation Views ────────────
 
-function VenueBrowseView({onSelectVenue}:{onSelectVenue:(v:Venue)=>void}) {
+function VenueBrowseView({venues,loading,onSelectVenue}:{venues:Venue[];loading?:boolean;onSelectVenue:(v:Venue)=>void}) {
   const [search,setSearch]=useState(""), [typeFilter,setTypeFilter]=useState("All"), [sort,setSort]=useState("Rating");
-  const filtered=VENUES.filter(v=>(typeFilter==="All"||v.type===typeFilter)&&(v.name.toLowerCase().includes(search.toLowerCase())||v.city.toLowerCase().includes(search.toLowerCase()))).sort((a,b)=>sort==="Price"?a.priceFrom-b.priceFrom:b.rating-a.rating);
+  const filtered=venues.filter(v=>(typeFilter==="All"||v.type===typeFilter)&&(v.name.toLowerCase().includes(search.toLowerCase())||v.city.toLowerCase().includes(search.toLowerCase()))).sort((a,b)=>sort==="Price"?a.priceFrom-b.priceFrom:b.rating-a.rating);
   return (
     <div>
       <div className="relative h-72 bg-gradient-to-br from-violet-900 via-violet-700 to-indigo-800 flex items-center justify-center overflow-hidden">
@@ -750,8 +1046,8 @@ function VenueBrowseView({onSelectVenue}:{onSelectVenue:(v:Venue)=>void}) {
         </div>
       </div>
       <div className="max-w-6xl mx-auto px-4 py-8">
-        <p className="text-sm text-muted-foreground mb-5">{filtered.length} venue{filtered.length!==1?"s":""} found</p>
-        {filtered.length===0?(<div className="text-center py-20 text-muted-foreground"><Building2 size={40} className="mx-auto mb-3 opacity-30"/><p className="text-lg font-medium">No venues found</p></div>):(
+        <p className="text-sm text-muted-foreground mb-5">{loading?"Loading venues…":`${filtered.length} venue${filtered.length!==1?"s":""} found`}</p>
+        {!loading&&filtered.length===0?(<div className="text-center py-20 text-muted-foreground"><Building2 size={40} className="mx-auto mb-3 opacity-30"/><p className="text-lg font-medium">No venues found</p></div>):(
           <motion.div variants={listVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtered.map(venue=>(
               <motion.div key={venue.id} variants={itemVariants} whileHover={{y:-6,scale:1.015}} whileTap={{scale:0.98}} transition={{type:"spring",stiffness:380,damping:28}} onClick={()=>onSelectVenue(venue)} className="glass rounded-xl overflow-hidden shadow-xl cursor-pointer group">
@@ -771,8 +1067,7 @@ function VenueBrowseView({onSelectVenue}:{onSelectVenue:(v:Venue)=>void}) {
   );
 }
 
-function VenueDetailView({venue,onSelectHall,onBack}:{venue:Venue;onSelectHall:(h:Hall)=>void;onBack:()=>void}) {
-  const halls=HALLS.filter(h=>h.venueId===venue.id);
+function VenueDetailView({venue,halls,loading,onSelectHall,onBack}:{venue:Venue;halls:Hall[];loading?:boolean;onSelectHall:(h:Hall)=>void;onBack:()=>void}) {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       <motion.button whileTap={{scale:0.96}} onClick={onBack} className="flex items-center gap-2 text-muted-foreground hover:text-primary text-sm mb-6 transition-colors"><ArrowLeft size={16}/> Back to venues</motion.button>
@@ -783,7 +1078,7 @@ function VenueDetailView({venue,onSelectHall,onBack}:{venue:Venue;onSelectHall:(
           <p className="text-muted-foreground leading-relaxed text-sm">{venue.description}</p>
           <div><h3 className="font-bold text-foreground mb-3" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Amenities & Facilities</h3><div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{venue.amenities.map(a=><div key={a} className="flex items-center gap-2 glass-subtle rounded-lg px-3 py-2"><Check size={13} className="text-green-500 shrink-0"/><span className="text-sm text-foreground dark:text-white">{a}</span></div>)}</div></div>
           <div>
-            <div className="flex items-center justify-between mb-4"><h3 className="font-bold text-foreground text-lg" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Our Halls & Rooms</h3><span className="text-sm text-muted-foreground">{halls.length} spaces</span></div>
+            <div className="flex items-center justify-between mb-4"><h3 className="font-bold text-foreground text-lg" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Our Halls & Rooms</h3><span className="text-sm text-muted-foreground">{loading?"Loading…":`${halls.length} spaces`}</span></div>
             <motion.div variants={listVariants} initial="hidden" animate="visible" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {halls.map(hall=>(
                 <motion.div key={hall.id} variants={itemVariants} className={cx("glass rounded-xl overflow-hidden shadow-lg",!hall.available&&"opacity-60")}>
@@ -893,8 +1188,9 @@ function HallConfirmationView({booking,onBackVenues,onMyBookings}:{booking:HallB
 
 // ─── Dashboard View ───────────────────────────────────────────────────────────
 
-function DashboardView({hallBookings,onCancelHall,addNotification}:{hallBookings:HallBooking[];onCancelHall:(id:string)=>void;addNotification:(n:Omit<Notification,"id"|"read">)=>void}) {
-  const [bookings,setBookings]=useState<Booking[]>(INITIAL_BOOKINGS);
+function DashboardView({hallBookings,halls,onCancelHall,onUpdateHall,addNotification,isLoggedIn,onNeedAuth}:{hallBookings:HallBooking[];halls:Hall[];onCancelHall:(id:string)=>void|Promise<void>;onUpdateHall:(b:HallBooking)=>void|Promise<void>;addNotification:(n:Omit<Notification,"id"|"read">)=>void;isLoggedIn:boolean;onNeedAuth:()=>void}) {
+  const [bookings,setBookings]=useState<Booking[]>([]);
+  const [loading,setLoading]=useState(false);
   const [tab,setTab]=useState<"events"|"venues">("events");
   const [cancellingId,setCancellingId]=useState<string|null>(null);
   const [cancellingHallId,setCancellingHallId]=useState<string|null>(null);
@@ -903,12 +1199,56 @@ function DashboardView({hallBookings,onCancelHall,addNotification}:{hallBookings
   const [localHallBookings,setLocalHallBookings]=useState<HallBooking[]>(hallBookings);
   useEffect(()=>{setLocalHallBookings(hallBookings);},[hallBookings]);
 
-  const cancel=(id:string,reason:string)=>{setBookings(prev=>prev.map(b=>b.id===id?{...b,status:"Cancelled"}:b));toast.info("Booking cancelled.");addNotification({type:"booking_cancelled",title:"Booking Cancelled",message:`Booking ${id} cancelled (${reason}). Refund processing.`,timestamp:"Just now"});setCancellingId(null);};
-  const cancelHall=(id:string)=>{onCancelHall(id);setLocalHallBookings(prev=>prev.map(b=>b.id===id?{...b,status:"Cancelled"}:b));toast.info("Hall booking cancelled.");setCancellingHallId(null);};
+  useEffect(()=>{
+    if(!isLoggedIn){setBookings([]);return;}
+    let cancelled=false;
+    (async()=>{
+      try{
+        setLoading(true);
+        const rows=await api.myBookings();
+        if(!cancelled) setBookings(rows.map(mapApiBooking));
+      }catch(err){
+        if(!cancelled) toast.error(err instanceof ApiError?err.message:"Failed to load bookings");
+      }finally{
+        if(!cancelled) setLoading(false);
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[isLoggedIn]);
+
+  const cancel=async(id:string,reason:string)=>{
+    try{
+      const updated=await api.cancelBooking(id);
+      setBookings(prev=>prev.map(b=>b.id===id?mapApiBooking(updated):b));
+      toast.info("Booking cancelled.");
+      addNotification({type:"booking_cancelled",title:"Booking Cancelled",message:`Booking cancelled (${reason}).`,timestamp:"Just now"});
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Cancel failed");
+    }finally{
+      setCancellingId(null);
+    }
+  };
+  const cancelHall=async(id:string)=>{
+    try{
+      await onCancelHall(id);
+      setLocalHallBookings(prev=>prev.map(b=>b.id===id?{...b,status:"Cancelled"}:b));
+      toast.info("Hall booking cancelled.");
+    }catch{/* parent shows error */}
+    finally{setCancellingHallId(null);}
+  };
 
   const cancelTarget=bookings.find(b=>b.id===cancellingId);
   const cancelHallTarget=localHallBookings.find(b=>b.id===cancellingHallId);
   const statusIcon=(s:Booking["status"])=>({Confirmed:<CheckCircle size={13} className="text-green-500"/>,Pending:<Clock size={13} className="text-amber-500"/>,Cancelled:<XCircle size={13} className="text-red-500"/>,Expired:<AlertCircle size={13} className="text-slate-400"/>}[s]);
+
+  if(!isLoggedIn){
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
+        <p className="text-muted-foreground mb-4">Sign in to view your bookings.</p>
+        <button onClick={onNeedAuth} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-bold">Sign In</button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
@@ -916,10 +1256,10 @@ function DashboardView({hallBookings,onCancelHall,addNotification}:{hallBookings
         {cancellingId&&cancelTarget&&<CancelConfirmModal key="ce" bookingRef={cancellingId} title={cancelTarget.eventTitle} onConfirm={reason=>cancel(cancellingId,reason)} onClose={()=>setCancellingId(null)}/>}
         {cancellingHallId&&cancelHallTarget&&<CancelConfirmModal key="ch" bookingRef={cancellingHallId} title={`${cancelHallTarget.hallName} at ${cancelHallTarget.venueName}`} onConfirm={()=>cancelHall(cancellingHallId)} onClose={()=>setCancellingHallId(null)}/>}
         {editingBooking&&<EditEventBookingDrawer key="eb" booking={editingBooking} onSave={updated=>{setBookings(prev=>prev.map(b=>b.id===updated.id?updated:b));}} onClose={()=>setEditingBooking(null)}/>}
-        {editingHallBooking&&<EditHallBookingDrawer key="ehb" booking={editingHallBooking} onSave={updated=>{setLocalHallBookings(prev=>prev.map(b=>b.id===updated.id?updated:b));}} onClose={()=>setEditingHallBooking(null)}/>}
+        {editingHallBooking&&<EditHallBookingDrawer key="ehb" booking={editingHallBooking} halls={halls} onSave={async updated=>{await onUpdateHall(updated);setLocalHallBookings(prev=>prev.map(b=>b.id===updated.id?updated:b));}} onClose={()=>setEditingHallBooking(null)}/>}
       </AnimatePresence>
 
-      <div className="flex items-center gap-3 mb-6"><div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center"><User size={18} className="text-primary"/></div><div><h2 className="font-bold text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>My Bookings</h2><p className="text-sm text-muted-foreground">Manage your reservations</p></div></div>
+      <div className="flex items-center gap-3 mb-6"><div className="w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center"><User size={18} className="text-primary"/></div><div><h2 className="font-bold text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>My Bookings</h2><p className="text-sm text-muted-foreground">{loading?"Loading…":"Manage your reservations"}</p></div></div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[{label:"Total",value:bookings.length+localHallBookings.length,color:"text-primary"},{label:"Confirmed",value:bookings.filter(b=>b.status==="Confirmed").length+localHallBookings.filter(b=>b.status==="Confirmed").length,color:"text-green-600"},{label:"Cancelled",value:bookings.filter(b=>b.status==="Cancelled").length+localHallBookings.filter(b=>b.status==="Cancelled").length,color:"text-red-600"}].map(({label,value,color})=>(
@@ -933,6 +1273,7 @@ function DashboardView({hallBookings,onCancelHall,addNotification}:{hallBookings
 
       {tab==="events"&&(
         <motion.div variants={listVariants} initial="hidden" animate="visible" className="space-y-4">
+          {bookings.length===0&&!loading&&<div className="text-center py-16 text-muted-foreground"><Ticket size={36} className="mx-auto mb-3 opacity-30"/><p className="font-medium">No event bookings yet</p></div>}
           {bookings.map(booking=>(
             <motion.div key={booking.id} variants={itemVariants} className="glass rounded-xl p-5 shadow-lg hover:shadow-xl transition-shadow">
               <div className="flex items-start justify-between mb-3"><div><p className="font-bold text-foreground text-sm" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{booking.eventTitle}</p><p className="text-xs text-muted-foreground">{booking.date} · {booking.venue}</p></div><span className={cx("flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full",statusColor(booking.status))}>{statusIcon(booking.status)} {booking.status}</span></div>
@@ -942,13 +1283,12 @@ function DashboardView({hallBookings,onCancelHall,addNotification}:{hallBookings
                   <span className="text-sm font-bold text-primary">৳{booking.total}</span>
                   {booking.status==="Confirmed"&&(
                     <div className="flex items-center gap-2">
-                      <motion.button whileTap={{scale:0.93}} onClick={()=>setEditingBooking(booking)} className="text-xs text-primary font-semibold hover:underline flex items-center gap-1"><Edit2 size={11}/> Edit</motion.button>
                       <motion.button whileTap={{scale:0.93}} onClick={()=>setCancellingId(booking.id)} className="text-xs text-destructive font-semibold hover:underline">Cancel</motion.button>
                     </div>
                   )}
                 </div>
               </div>
-              {booking.guestName&&<p className="text-xs text-muted-foreground mt-2">Guest: {booking.guestName} · Ref: {booking.id}</p>}
+              <p className="text-xs text-muted-foreground mt-2">Ref: {booking.id}</p>
             </motion.div>
           ))}
         </motion.div>
@@ -983,14 +1323,14 @@ function DashboardView({hallBookings,onCancelHall,addNotification}:{hallBookings
 
 // ─── Event Creation Wizard ────────────────────────────────────────────────────
 
-function EventCreationWizard({onClose,onPublish}:{onClose:()=>void;onPublish:(event:SeatFlowEvent)=>void}) {
+function EventCreationWizard({venues,onClose,onPublish}:{venues:Venue[];onClose:()=>void;onPublish:(event:SeatFlowEvent)=>void}) {
   const [step,setStep]=useState(1);
   const [title,setTitle]=useState(""), [category,setCategory]=useState(""), [tagline,setTagline]=useState(""), [description,setDescription]=useState("");
   const [date,setDate]=useState(""), [startTime,setStartTime]=useState(""), [venueType,setVenueType]=useState<"existing"|"custom">("custom"), [venueId,setVenueId]=useState(""), [customVenue,setCustomVenue]=useState(""), [city,setCity]=useState("Dhaka");
   const [isFree,setIsFree]=useState(false), [tiers,setTiers]=useState<TicketTier[]>([{name:"VIP",price:2500,quantity:10},{name:"Standard",price:800,quantity:90},{name:"Accessible",price:500,quantity:20}]), [maxPerPerson,setMaxPerPerson]=useState(4);
   const [coverUrl,setCoverUrl]=useState(""), [previewImg,setPreviewImg]=useState(""), [tags,setTags]=useState<string[]>([]), [tagInput,setTagInput]=useState("");
   const totalCapacity=tiers.reduce((s,t)=>s+t.quantity,0);
-  const venueName=venueType==="existing"?(VENUES.find(v=>v.id===venueId)?.name||""):customVenue;
+  const venueName=venueType==="existing"?(venues.find(v=>v.id===venueId)?.name||""):customVenue;
   const addTier=()=>setTiers(prev=>[...prev,{name:"",price:0,quantity:0}]);
   const removeTier=(i:number)=>setTiers(prev=>prev.filter((_,idx)=>idx!==i));
   const updateTier=(i:number,field:keyof TicketTier,value:string|number)=>setTiers(prev=>prev.map((t,idx)=>idx===i?{...t,[field]:value}:t));
@@ -1023,7 +1363,7 @@ function EventCreationWizard({onClose,onPublish}:{onClose:()=>void;onPublish:(ev
             {step===2&&<div className="glass rounded-xl p-6 shadow-xl space-y-5">
               <h2 className="font-bold text-xl text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Date & Location</h2>
               <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-semibold text-foreground mb-1.5">Date *</label><input type="date" value={date} onChange={e=>setDate(e.target.value)} className={inp}/></div><div><label className="block text-sm font-semibold text-foreground mb-1.5">Start Time</label><input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} className={inp}/></div></div>
-              <div><label className="block text-sm font-semibold text-foreground mb-2">Venue</label><div className="flex gap-2 mb-3">{(["existing","custom"] as const).map(t=><button key={t} onClick={()=>setVenueType(t)} className={cx("flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition-all",venueType===t?"border-primary bg-primary/10 text-primary":"border-white/30 dark:border-white/10 text-foreground hover:border-primary")}>{t==="existing"?"Existing Venue":"Custom Address"}</button>)}</div>{venueType==="existing"?(<div className="relative"><select value={venueId} onChange={e=>setVenueId(e.target.value)} className={selectCls}><option value="">Select a venue…</option>{VENUES.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select><ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-300 pointer-events-none"/></div>):<input value={customVenue} onChange={e=>setCustomVenue(e.target.value)} placeholder="Venue name" className={inp}/>}</div>
+              <div><label className="block text-sm font-semibold text-foreground mb-2">Venue</label><div className="flex gap-2 mb-3">{(["existing","custom"] as const).map(t=><button key={t} onClick={()=>setVenueType(t)} className={cx("flex-1 py-2 rounded-xl text-sm font-semibold border-2 transition-all",venueType===t?"border-primary bg-primary/10 text-primary":"border-white/30 dark:border-white/10 text-foreground hover:border-primary")}>{t==="existing"?"Existing Venue":"Custom Address"}</button>)}</div>{venueType==="existing"?(<div className="relative"><select value={venueId} onChange={e=>setVenueId(e.target.value)} className={selectCls}><option value="">Select a venue…</option>{venues.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select><ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-300 pointer-events-none"/></div>):<input value={customVenue} onChange={e=>setCustomVenue(e.target.value)} placeholder="Venue name" className={inp}/>}</div>
               <div><label className="block text-sm font-semibold text-foreground mb-1.5">City</label><div className="relative"><select value={city} onChange={e=>setCity(e.target.value)} className={selectCls}>{["Dhaka","Chittagong","Sylhet","Rajshahi","Khulna","Barisal","Mymensingh","Rangpur","Other"].map(c=><option key={c}>{c}</option>)}</select><ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-300 pointer-events-none"/></div></div>
             </div>}
             {step===3&&<div className="glass rounded-xl p-6 shadow-xl space-y-5">
@@ -1245,7 +1585,7 @@ function EventDeleteConfirmModal({event,onConfirm,onClose}:{event:SeatFlowEvent;
 
 // ─── Organizer View ───────────────────────────────────────────────────────────
 
-function OrganizerView({events,onAddEvent,onUpdateEvent,onDeleteEvent,profile,onUpdateProfile}:{events:SeatFlowEvent[];onAddEvent:(e:SeatFlowEvent)=>void;onUpdateEvent:(e:SeatFlowEvent)=>void;onDeleteEvent:(id:string)=>void;profile:OrganizerProfile;onUpdateProfile:(p:OrganizerProfile)=>void}) {
+function OrganizerView({events,venues,onAddEvent,onUpdateEvent,onDeleteEvent,profile,onUpdateProfile}:{events:SeatFlowEvent[];venues:Venue[];onAddEvent:(e:SeatFlowEvent)=>void;onUpdateEvent:(e:SeatFlowEvent)=>void;onDeleteEvent:(id:string)=>void;profile:OrganizerProfile;onUpdateProfile:(p:OrganizerProfile)=>void}) {
   const [tab,setTab]=useState<"analytics"|"events"|"profile">("analytics");
   const [showWizard,setShowWizard]=useState(false);
   const [viewingEvent,setViewingEvent]=useState<SeatFlowEvent|null>(null);
@@ -1257,7 +1597,7 @@ function OrganizerView({events,onAddEvent,onUpdateEvent,onDeleteEvent,profile,on
   const inp="w-full px-4 py-2.5 rounded-xl glass-input focus:outline-none focus:ring-2 focus:ring-primary text-sm";
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
-      {showWizard&&<EventCreationWizard onClose={()=>setShowWizard(false)} onPublish={event=>{onAddEvent(event);setTab("events");}}/>}
+      {showWizard&&<EventCreationWizard venues={venues} onClose={()=>setShowWizard(false)} onPublish={event=>{onAddEvent(event);setTab("events");}}/>}
       <AnimatePresence>
         {viewingEvent&&<EventViewModal key="view" event={viewingEvent} onClose={()=>setViewingEvent(null)} onEdit={()=>{setEditingEvent(viewingEvent);setViewingEvent(null);}}/>}
         {editingEvent&&<EventEditDrawer key="edit" event={editingEvent} onSave={updated=>{onUpdateEvent(updated);setEditingEvent(null);}} onClose={()=>setEditingEvent(null)}/>}
@@ -1508,31 +1848,258 @@ function Header({view,isLoggedIn,userName,unreadCount,isDark,onNav,onOpenAuth,on
 
 export default function App() {
   const [view,setView]=useState<View>("events");
-  const [allEvents,setAllEvents]=useState<SeatFlowEvent[]>(BASE_EVENTS);
+  const [allEvents,setAllEvents]=useState<SeatFlowEvent[]>([]);
+  const [eventsLoading,setEventsLoading]=useState(true);
   const [selectedEvent,setSelectedEvent]=useState<SeatFlowEvent|null>(null);
   const [selectedSeats,setSelectedSeats]=useState<Seat[]>([]);
   const [guestName,setGuestName]=useState("");
   const [isLoggedIn,setIsLoggedIn]=useState(false);
   const [userName,setUserName]=useState("");
+  const [userRole,setUserRole]=useState("customer");
   const [showAuthModal,setShowAuthModal]=useState(false);
   const [notifications,setNotifications]=useState<Notification[]>(INITIAL_NOTIFICATIONS);
   const [showNotifications,setShowNotifications]=useState(false);
   const [organizerProfile,setOrganizerProfile]=useState<OrganizerProfile>(DEFAULT_ORGANIZER_PROFILE);
   const [selectedVenue,setSelectedVenue]=useState<Venue|null>(null);
   const [selectedHall,setSelectedHall]=useState<Hall|null>(null);
+  const [venues,setVenues]=useState<Venue[]>(VENUES);
+  const [halls,setHalls]=useState<Hall[]>(HALLS);
+  const [venuesLoading,setVenuesLoading]=useState(false);
+  const [hallsLoading,setHallsLoading]=useState(false);
   const [hallBookings,setHallBookings]=useState<HallBooking[]>([]);
   const [lastHallBooking,setLastHallBooking]=useState<HallBooking|null>(null);
   const [isDark,setIsDark]=useState(false);
+  const [paying,setPaying]=useState(false);
+  const [hallBookingBusy,setHallBookingBusy]=useState(false);
+
+  const refreshEvents=useCallback(async()=>{
+    try{
+      setEventsLoading(true);
+      const rows=await api.listEvents();
+      setAllEvents(rows.map(mapApiEvent));
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"API unreachable — is the backend running?");
+      setAllEvents(BASE_EVENTS);
+    }finally{
+      setEventsLoading(false);
+    }
+  },[]);
+
+  const refreshVenues=useCallback(async()=>{
+    try{
+      setVenuesLoading(true);
+      const rows=await api.listVenues();
+      setVenues(rows.map(mapApiVenue));
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Failed to load venues");
+      setVenues(VENUES);
+    }finally{
+      setVenuesLoading(false);
+    }
+  },[]);
+
+  const refreshHallBookings=useCallback(async()=>{
+    if(!getToken()){setHallBookings([]);return;}
+    try{
+      const rows=await api.myHallBookings();
+      setHallBookings(rows.map(mapApiHallBooking));
+    }catch{
+      setHallBookings([]);
+    }
+  },[]);
+
+  const loadHallsForVenue=useCallback(async(venueId:string)=>{
+    try{
+      setHallsLoading(true);
+      const rows=await api.listHalls(venueId);
+      const mapped=rows.map(mapApiHall);
+      setHalls(prev=>{
+        const others=prev.filter(h=>h.venueId!==venueId);
+        return [...others,...mapped];
+      });
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Failed to load halls");
+      setHalls(prev=>{
+        const fallback=HALLS.filter(h=>h.venueId===venueId);
+        if(fallback.length===0) return prev;
+        const others=prev.filter(h=>h.venueId!==venueId);
+        return [...others,...fallback];
+      });
+    }finally{
+      setHallsLoading(false);
+    }
+  },[]);
 
   useEffect(()=>{document.documentElement.classList.toggle("dark",isDark);},[isDark]);
+
+  useEffect(()=>{
+    const stored=getStoredUser();
+    if(stored&&getToken()){
+      setIsLoggedIn(true);
+      setUserName(stored.full_name);
+      setUserRole(stored.role);
+      setOrganizerProfile(prev=>({...prev,name:stored.full_name,email:stored.email}));
+      refreshHallBookings();
+    }
+    api.health().catch(()=>toast.message("Backend not ready yet — start with npm run dev from repo root."));
+    refreshEvents();
+    refreshVenues();
+  },[refreshEvents,refreshVenues,refreshHallBookings]);
+
+  useEffect(()=>{
+    if(view==="dashboard"&&isLoggedIn) refreshHallBookings();
+  },[view,isLoggedIn,refreshHallBookings]);
 
   const navigate=(v:View)=>setView(v);
   const unreadCount=notifications.filter(n=>!n.read).length;
   const addNotification=(n:Omit<Notification,"id"|"read">)=>setNotifications(prev=>[{...n,id:`n-${Date.now()}`,read:false},...prev]);
-  const handleAuth=(name:string)=>{setIsLoggedIn(true);setUserName(name);};
-  const handleSignOut=()=>{setIsLoggedIn(false);setUserName("");toast.info("You have been signed out.");};
-  const handlePayment=()=>{navigate("confirmation");toast.success("Booking confirmed! Check your email.");addNotification({type:"booking_confirmed",title:"Booking Confirmed",message:`Your booking for ${selectedEvent?.title} is confirmed!`,timestamp:"Just now"});};
-  const handleHallConfirm=(booking:HallBooking)=>{setHallBookings(prev=>[booking,...prev]);setLastHallBooking(booking);navigate("hall-confirmation");toast.success("Hall booking confirmed!");addNotification({type:"hall_booking_confirmed",title:"Hall Booking Confirmed",message:`${booking.hallName} at ${booking.venueName} is confirmed.`,timestamp:"Just now"});};
+  const handleAuth=(user:AuthUser)=>{
+    setIsLoggedIn(true);
+    setUserName(user.full_name);
+    setUserRole(user.role);
+    setOrganizerProfile(prev=>({...prev,name:user.full_name,email:user.email}));
+    refreshHallBookings();
+  };
+  const handleSignOut=()=>{clearSession();setIsLoggedIn(false);setUserName("");setUserRole("customer");setHallBookings([]);toast.info("You have been signed out.");};
+  const requireAuth=()=>{if(!isLoggedIn){setShowAuthModal(true);return false;}return true;};
+
+  const handlePayment=async()=>{
+    if(!selectedEvent)return;
+    if(!requireAuth())return;
+    const seatIds=selectedSeats.map(s=>s.apiId).filter(Boolean) as string[];
+    if(seatIds.length===0){toast.error("Missing seat IDs — reload seats and try again.");return;}
+    try{
+      setPaying(true);
+      await api.createBooking({event_id:selectedEvent.id,seat_ids:seatIds});
+      navigate("confirmation");
+      toast.success("Booking confirmed!");
+      addNotification({type:"booking_confirmed",title:"Booking Confirmed",message:`Your booking for ${selectedEvent.title} is confirmed!`,timestamp:"Just now"});
+      refreshEvents();
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Booking failed");
+    }finally{
+      setPaying(false);
+    }
+  };
+
+  const handleHallConfirm=async(booking:HallBooking)=>{
+    if(!requireAuth())return;
+    if(hallBookingBusy)return;
+    try{
+      setHallBookingBusy(true);
+      const created=await api.createHallBooking({
+        venue_id:booking.venueId,
+        hall_id:booking.hallId,
+        booking_date:booking.date,
+        start_time:booking.startTime,
+        end_time:booking.endTime,
+        duration_type:booking.durationType,
+        purpose:booking.purpose,
+        guest_count:booking.guestCount,
+        add_ons:booking.addOns,
+        contact_name:booking.contactName,
+        contact_phone:booking.contactPhone,
+        contact_email:booking.contactEmail||null,
+      });
+      const mapped=mapApiHallBooking(created);
+      setHallBookings(prev=>[mapped,...prev]);
+      setLastHallBooking(mapped);
+      navigate("hall-confirmation");
+      toast.success("Hall booking saved!");
+      addNotification({type:"hall_booking_confirmed",title:"Hall Booking Confirmed",message:`${mapped.hallName} at ${mapped.venueName} is confirmed.`,timestamp:"Just now"});
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Hall booking failed");
+    }finally{
+      setHallBookingBusy(false);
+    }
+  };
+
+  const handleCancelHallBooking=async(id:string)=>{
+    try{
+      const updated=await api.cancelHallBooking(id);
+      setHallBookings(prev=>prev.map(b=>b.id===id?mapApiHallBooking(updated):b));
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Failed to cancel hall booking");
+      throw err;
+    }
+  };
+
+  const handleUpdateHallBooking=async(updated:HallBooking)=>{
+    try{
+      const saved=await api.updateHallBooking(updated.id,{
+        booking_date:updated.date,
+        start_time:updated.startTime,
+        end_time:updated.endTime,
+        duration_type:updated.durationType,
+        purpose:updated.purpose,
+        guest_count:updated.guestCount,
+        add_ons:updated.addOns,
+        contact_name:updated.contactName,
+        contact_phone:updated.contactPhone,
+        contact_email:updated.contactEmail||null,
+      });
+      const mapped=mapApiHallBooking(saved);
+      setHallBookings(prev=>prev.map(b=>b.id===mapped.id?mapped:b));
+      toast.success("Hall booking updated");
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Failed to update hall booking");
+      throw err;
+    }
+  };
+
+  const handleAddEvent=async(event:SeatFlowEvent)=>{
+    if(!requireAuth())return;
+    if(userRole!=="organizer"&&userRole!=="admin"){
+      toast.error("Organizer account required. Register as organizer or use organizer@example.com");
+      return;
+    }
+    try{
+      const iso=new Date(`${event.date} ${event.time}`).toISOString();
+      const created=await api.createEvent({
+        title:event.title,
+        description:event.description,
+        venue:event.venue,
+        event_date:Number.isNaN(Date.parse(iso))?new Date(Date.now()+7*86400000).toISOString():iso,
+        price:event.priceFrom,
+        category:event.category||"Concert",
+        status:event.status==="draft"?"Draft":"Published",
+        booking_window_open:true,
+        vip_seats:8,
+        standard_seats:Math.max(8,event.totalSeats-8),
+      });
+      setAllEvents(prev=>[mapApiEvent(created),...prev]);
+      toast.success("Event published to API");
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Failed to create event");
+    }
+  };
+
+  const handleUpdateEvent=async(event:SeatFlowEvent)=>{
+    try{
+      const updated=await api.updateEvent(event.id,{
+        title:event.title,
+        description:event.description,
+        venue:event.venue,
+        category:event.category,
+        price:event.priceFrom,
+        status:event.status==="draft"?"Draft":"Published",
+      });
+      setAllEvents(prev=>prev.map(e=>e.id===event.id?mapApiEvent(updated):e));
+      toast.success("Event updated");
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Failed to update event");
+    }
+  };
+
+  const handleDeleteEvent=async(id:string)=>{
+    try{
+      await api.deleteEvent(id);
+      setAllEvents(prev=>prev.filter(e=>e.id!==id));
+      toast.success("Event deleted");
+    }catch(err){
+      toast.error(err instanceof ApiError?err.message:"Failed to delete event");
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -1543,20 +2110,21 @@ export default function App() {
       </AnimatePresence>
       <Header view={view} isLoggedIn={isLoggedIn} userName={userName} unreadCount={unreadCount} isDark={isDark} onNav={navigate} onOpenAuth={()=>setShowAuthModal(true)} onSignOut={handleSignOut} onToggleNotifications={()=>setShowNotifications(!showNotifications)} onToggleDark={()=>setIsDark(!isDark)}/>
       <main className="flex-1">
+        {view==="events"&&eventsLoading&&<p className="text-center text-sm text-muted-foreground py-4">Loading events from API…</p>}
         <AnimatePresence mode="wait">
           <PageTransition k={view}>
             {view==="events"&&<EventsView events={allEvents} onSelectEvent={event=>{setSelectedEvent(event);navigate("event-detail");}}/>}
-            {view==="event-detail"&&selectedEvent&&<EventDetailView event={selectedEvent} onSelectSeats={()=>navigate("seat-selection")} onBack={()=>navigate("events")}/>}
+            {view==="event-detail"&&selectedEvent&&<EventDetailView event={selectedEvent} onSelectSeats={()=>{if(!requireAuth())return;navigate("seat-selection");}} onBack={()=>navigate("events")}/>}
             {view==="seat-selection"&&selectedEvent&&<SeatSelectionView event={selectedEvent} onContinue={seats=>{setSelectedSeats(seats);navigate("booking-details");}} onBack={()=>navigate("event-detail")}/>}
             {view==="booking-details"&&selectedEvent&&<BookingDetailsView event={selectedEvent} seats={selectedSeats} onConfirm={name=>{setGuestName(name);navigate("payment");}} onBack={()=>navigate("seat-selection")}/>}
-            {view==="payment"&&selectedEvent&&<PaymentView event={selectedEvent} seats={selectedSeats} name={guestName} onPay={handlePayment} onBack={()=>navigate("booking-details")}/>}
+            {view==="payment"&&selectedEvent&&<PaymentView event={selectedEvent} seats={selectedSeats} name={guestName} onPay={()=>{if(!paying)handlePayment();}} onBack={()=>navigate("booking-details")}/>}
             {view==="confirmation"&&selectedEvent&&<ConfirmationView event={selectedEvent} seats={selectedSeats} name={guestName} onDone={()=>navigate("events")}/>}
-            {view==="venue-browse"&&<VenueBrowseView onSelectVenue={venue=>{setSelectedVenue(venue);navigate("venue-detail");}}/>}
-            {view==="venue-detail"&&selectedVenue&&<VenueDetailView venue={selectedVenue} onSelectHall={hall=>{setSelectedHall(hall);navigate("hall-booking");}} onBack={()=>navigate("venue-browse")}/>}
+            {view==="venue-browse"&&<VenueBrowseView venues={venues} loading={venuesLoading} onSelectVenue={venue=>{setSelectedVenue(venue);loadHallsForVenue(venue.id);navigate("venue-detail");}}/>}
+            {view==="venue-detail"&&selectedVenue&&<VenueDetailView venue={selectedVenue} halls={halls.filter(h=>h.venueId===selectedVenue.id)} loading={hallsLoading} onSelectHall={hall=>{setSelectedHall(hall);navigate("hall-booking");}} onBack={()=>navigate("venue-browse")}/>}
             {view==="hall-booking"&&selectedVenue&&selectedHall&&<HallBookingView venue={selectedVenue} hall={selectedHall} onConfirm={handleHallConfirm} onBack={()=>navigate("venue-detail")}/>}
             {view==="hall-confirmation"&&lastHallBooking&&<HallConfirmationView booking={lastHallBooking} onBackVenues={()=>navigate("venue-browse")} onMyBookings={()=>navigate("dashboard")}/>}
-            {view==="dashboard"&&<DashboardView hallBookings={hallBookings} onCancelHall={id=>setHallBookings(prev=>prev.map(b=>b.id===id?{...b,status:"Cancelled"}:b))} addNotification={addNotification}/>}
-            {view==="organizer"&&<OrganizerView events={allEvents} onAddEvent={event=>setAllEvents(prev=>[event,...prev])} onUpdateEvent={event=>setAllEvents(prev=>prev.map(e=>e.id===event.id?event:e))} onDeleteEvent={id=>setAllEvents(prev=>prev.filter(e=>e.id!==id))} profile={organizerProfile} onUpdateProfile={setOrganizerProfile}/>}
+            {view==="dashboard"&&<DashboardView hallBookings={hallBookings} halls={halls} onCancelHall={handleCancelHallBooking} onUpdateHall={handleUpdateHallBooking} addNotification={addNotification} isLoggedIn={isLoggedIn} onNeedAuth={()=>{setShowAuthModal(true);}}/>}
+            {view==="organizer"&&<OrganizerView events={allEvents} venues={venues} onAddEvent={handleAddEvent} onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent} profile={organizerProfile} onUpdateProfile={setOrganizerProfile}/>}
           </PageTransition>
         </AnimatePresence>
       </main>
