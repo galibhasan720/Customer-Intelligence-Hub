@@ -1,17 +1,10 @@
-"""Controller layer for the users domain.
-
-User profile stubs (Features 2-3).
-"""
+"""Users controller."""
 
 from __future__ import annotations
 
-from app.users.service import UsersService
+from app.users.models import Profile
+from app.users.schemas import ProfileOut
 
-_service = UsersService()
 
-
-def ping() -> dict[str, str]:
-    """Health-style stub used to verify MVC wiring."""
-    payload = _service.ping()
-    payload["layer"] = "controller"
-    return payload
+def me(user: Profile) -> ProfileOut:
+    return ProfileOut.model_validate(user)

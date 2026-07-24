@@ -1,18 +1,17 @@
-"""HTTP router for the users domain.
-
-User profile stubs (Features 2-3).
-"""
+"""HTTP router for users."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.dependencies import get_current_user
 from app.users import controller
+from app.users.models import Profile
+from app.users.schemas import ProfileOut
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/ping")
-def ping() -> dict[str, str]:
-    """Stub endpoint proving Router → Controller → Service → Repository."""
-    return controller.ping()
+@router.get("/me", response_model=ProfileOut)
+def get_me(user: Profile = Depends(get_current_user)) -> ProfileOut:
+    return controller.me(user)

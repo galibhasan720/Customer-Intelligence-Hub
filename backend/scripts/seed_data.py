@@ -1,8 +1,7 @@
-"""Seed demo categories, events, and seats for viva demos."""
+"""Seed demo users, categories, events, and seats for local development."""
 
 from __future__ import annotations
 
-import os
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -16,15 +15,32 @@ if str(BACKEND_ROOT) not in sys.path:
 from sqlalchemy import select  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
+from app.core.security import hash_password  # noqa: E402
 from app.database.client import is_placeholder_database_url  # noqa: E402
 from app.database.session import SessionLocal  # noqa: E402
 from app.events.models import Category, Event  # noqa: E402
 from app.seats.models import Seat  # noqa: E402
 from app.users.models import Profile  # noqa: E402
+from app.venues.models import Hall, Venue  # noqa: E402
 
-# Import remaining models so mappers resolve relationships.
 import app.bookings.models  # noqa: E402, F401
 import app.notifications.models  # noqa: E402, F401
+import app.venues.models as _venues_models  # noqa: E402, F401
+
+DEMO_PASSWORD = "password123"
+
+DEMO_USERS = [
+    {
+        "email": "organizer@example.com",
+        "full_name": "Demo Organizer",
+        "role": "organizer",
+    },
+    {
+        "email": "customer@example.com",
+        "full_name": "Demo Customer",
+        "role": "customer",
+    },
+]
 
 DEMO_CATEGORIES = [
     ("Concert", "Live music and performances"),
@@ -52,46 +68,170 @@ DEMO_EVENTS = [
         "vip": 6,
         "standard": 18,
     },
+    {
+        "title": "Nuruldiner Sarajiban — Stage Play",
+        "category": "Theatre",
+        "venue": "Bangladesh Shilpakala Academy",
+        "price": Decimal("300.00"),
+        "days_ahead": 20,
+        "vip": 4,
+        "standard": 20,
+    },
+]
+
+DEMO_VENUES = [
+    {
+        "name": "Bashundhara International Convention City",
+        "type": "Convention Centre",
+        "address": "Purbachal Express Highway",
+        "city": "Dhaka",
+        "image": "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80",
+        "rating": Decimal("4.70"),
+        "review_count": 412,
+        "price_from": Decimal("35000"),
+        "description": "Bangladesh's premier convention destination with world-class halls and facilities.",
+        "amenities": ["WiFi", "Parking", "Catering", "AV Equipment", "AC", "Generator", "Security"],
+        "halls": [
+            {
+                "name": "Grand Ballroom",
+                "capacity": 2000,
+                "area_sqft": 45000,
+                "floor": 1,
+                "price_per_hour": Decimal("15000"),
+                "price_half_day": Decimal("60000"),
+                "price_full_day": Decimal("100000"),
+                "amenities": ["Stage", "AV System", "LED Wall", "Catering", "VIP Room"],
+                "image": "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&q=80",
+                "available": True,
+            },
+            {
+                "name": "Hall A",
+                "capacity": 500,
+                "area_sqft": 10000,
+                "floor": 2,
+                "price_per_hour": Decimal("5000"),
+                "price_half_day": Decimal("20000"),
+                "price_full_day": Decimal("35000"),
+                "amenities": ["AV System", "Stage", "Catering", "AC"],
+                "image": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80",
+                "available": True,
+            },
+            {
+                "name": "Conference Room 1",
+                "capacity": 100,
+                "area_sqft": 2000,
+                "floor": 3,
+                "price_per_hour": Decimal("2000"),
+                "price_half_day": Decimal("8000"),
+                "price_full_day": Decimal("14000"),
+                "amenities": ["Projector", "Whiteboard", "Video Conferencing", "AC"],
+                "image": "https://images.unsplash.com/photo-1552664730-d307ca884978?w=800&q=80",
+                "available": False,
+            },
+        ],
+    },
+    {
+        "name": "Pan Pacific Sonargaon Dhaka",
+        "type": "Hotel Banquet",
+        "address": "107 Kazi Nazrul Islam Avenue",
+        "city": "Dhaka",
+        "image": "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&q=80",
+        "rating": Decimal("4.60"),
+        "review_count": 289,
+        "price_from": Decimal("50000"),
+        "description": "Iconic 5-star hotel offering grand ballrooms and intimate meeting rooms.",
+        "amenities": ["WiFi", "Parking", "Catering", "AV Equipment", "AC", "Generator", "Business Centre", "Spa"],
+        "halls": [
+            {
+                "name": "Grand Pavilion",
+                "capacity": 1200,
+                "area_sqft": 25000,
+                "floor": 1,
+                "price_per_hour": Decimal("25000"),
+                "price_half_day": Decimal("90000"),
+                "price_full_day": Decimal("150000"),
+                "amenities": ["Luxury Catering", "Stage", "LED System", "Valet", "VIP Lounge"],
+                "image": "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&q=80",
+                "available": True,
+            },
+            {
+                "name": "Crystal Hall",
+                "capacity": 400,
+                "area_sqft": 8000,
+                "floor": 2,
+                "price_per_hour": Decimal("10000"),
+                "price_half_day": Decimal("40000"),
+                "price_full_day": Decimal("70000"),
+                "amenities": ["AV System", "Catering", "Dance Floor"],
+                "image": "https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=80",
+                "available": True,
+            },
+        ],
+    },
 ]
 
 
-def _resolve_organizer_id(db) -> uuid.UUID | None:
-    raw = os.getenv("SEED_ORGANIZER_ID", "").strip()
-    if raw:
-        try:
-            organizer_id = uuid.UUID(raw)
-        except ValueError:
-            print(f"ERROR: SEED_ORGANIZER_ID is not a valid UUID: {raw}")
-            return None
-        profile = db.get(Profile, organizer_id)
-        if profile is None:
-            print(
-                f"ERROR: No profiles row for SEED_ORGANIZER_ID={organizer_id}.\n"
-                "Create a Supabase Auth user, insert a profiles row (role=organizer), "
-                "then re-run seed."
+def _ensure_venues(db) -> None:
+    for spec in DEMO_VENUES:
+        row = db.scalar(select(Venue).where(Venue.name == spec["name"]))
+        if row is not None:
+            print(f"  = venue exists: {spec['name']}")
+            continue
+        venue = Venue(
+            name=spec["name"],
+            type=spec["type"],
+            address=spec["address"],
+            city=spec["city"],
+            image=spec["image"],
+            rating=spec["rating"],
+            review_count=spec["review_count"],
+            price_from=spec["price_from"],
+            description=spec["description"],
+            amenities=spec["amenities"],
+            is_active=True,
+        )
+        db.add(venue)
+        db.flush()
+        for hall_spec in spec["halls"]:
+            db.add(
+                Hall(
+                    venue_id=venue.id,
+                    name=hall_spec["name"],
+                    capacity=hall_spec["capacity"],
+                    area_sqft=hall_spec["area_sqft"],
+                    floor=hall_spec["floor"],
+                    price_per_hour=hall_spec["price_per_hour"],
+                    price_half_day=hall_spec["price_half_day"],
+                    price_full_day=hall_spec["price_full_day"],
+                    amenities=hall_spec["amenities"],
+                    image=hall_spec["image"],
+                    available=hall_spec["available"],
+                )
             )
-            return None
-        return organizer_id
+        print(f"  + venue {spec['name']} ({len(spec['halls'])} halls)")
 
-    existing = db.scalar(
-        select(Profile).where(Profile.role.in_(("organizer", "admin"))).limit(1)
-    )
-    if existing:
-        return existing.id
 
-    print(
-        "SKIP events/seats: no organizer profile found.\n"
-        "Steps:\n"
-        "1. Supabase → Authentication → Users → Add user (email + password).\n"
-        "2. Copy the user UUID.\n"
-        "3. In SQL Editor run:\n"
-        "   INSERT INTO profiles (id, full_name, email, role)\n"
-        "   VALUES ('<USER_UUID>', 'Demo Organizer', 'organizer@example.com', 'organizer');\n"
-        "4. Set SEED_ORGANIZER_ID=<USER_UUID> in backend/.env (optional if role=organizer).\n"
-        "5. Re-run: python -m scripts.seed_data\n"
-        "Categories will still be seeded if missing."
-    )
-    return None
+
+def _ensure_users(db) -> dict[str, Profile]:
+    by_role: dict[str, Profile] = {}
+    for spec in DEMO_USERS:
+        row = db.scalar(select(Profile).where(Profile.email == spec["email"]))
+        if row is None:
+            row = Profile(
+                id=uuid.uuid4(),
+                full_name=spec["full_name"],
+                email=spec["email"],
+                password_hash=hash_password(DEMO_PASSWORD),
+                role=spec["role"],
+                is_active=True,
+            )
+            db.add(row)
+            db.flush()
+            print(f"  + user {spec['email']} / {DEMO_PASSWORD} ({spec['role']})")
+        else:
+            print(f"  = user exists: {spec['email']}")
+        by_role[spec["role"]] = row
+    return by_role
 
 
 def _ensure_categories(db) -> dict[str, Category]:
@@ -167,25 +307,38 @@ def seed() -> int:
 
     db = SessionLocal()
     try:
+        print("Seeding users...")
+        users = _ensure_users(db)
+        db.commit()
+
         print("Seeding categories...")
         categories = _ensure_categories(db)
         db.commit()
 
-        organizer_id = _resolve_organizer_id(db)
-        if organizer_id is not None:
-            print(f"Seeding events/seats for organizer {organizer_id}...")
-            for spec in DEMO_EVENTS:
-                _ensure_event_with_seats(
-                    db,
-                    organizer_id=organizer_id,
-                    categories=categories,
-                    spec=spec,
-                )
-            db.commit()
-        else:
-            db.rollback()
+        organizer = users.get("organizer")
+        if organizer is None:
+            print("ERROR: organizer user missing after seed")
+            return 1
 
+        print(f"Seeding events/seats for organizer {organizer.id}...")
+        for spec in DEMO_EVENTS:
+            _ensure_event_with_seats(
+                db,
+                organizer_id=organizer.id,
+                categories=categories,
+                spec=spec,
+            )
+        db.commit()
+
+        print("Seeding venues/halls...")
+        _ensure_venues(db)
+        db.commit()
         print("Seed complete.")
+        print(
+            "Demo logins:\n"
+            f"  organizer@example.com / {DEMO_PASSWORD}\n"
+            f"  customer@example.com / {DEMO_PASSWORD}"
+        )
         return 0
     except Exception as exc:  # noqa: BLE001
         db.rollback()

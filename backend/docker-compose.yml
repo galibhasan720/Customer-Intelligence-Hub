@@ -1,8 +1,35 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: seatflow-postgres
+    environment:
+      POSTGRES_USER: seatflow
+      POSTGRES_PASSWORD: seatflow
+      POSTGRES_DB: seatflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - seatflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seatflow -d seatflow"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Optional: production-style API image (HF). Local `npm run dev` uses host uvicorn instead.
   api:
     build: .
     ports:
       - "7860:7860"
     env_file:
       - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - full
     restart: unless-stopped
+
+volumes:
+  seatflow_pgdata:
