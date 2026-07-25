@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -68,6 +69,21 @@ class VenuesRepository:
             .options(joinedload(HallBooking.venue), joinedload(HallBooking.hall))
         )
         return self.db.scalars(stmt).unique().first()
+
+    def list_conflicting_bookings(
+        self,
+        hall_id: UUID,
+        booking_date: date,
+        exclude_booking_id: UUID | None = None,
+    ) -> list[HallBooking]:
+        stmt = select(HallBooking).where(
+            HallBooking.hall_id == hall_id,
+            HallBooking.booking_date == booking_date,
+            HallBooking.status != "Cancelled",
+        )
+        if exclude_booking_id is not None:
+            stmt = stmt.where(HallBooking.id != exclude_booking_id)
+        return list(self.db.scalars(stmt).all())
 
     def create_booking(self, booking: HallBooking) -> HallBooking:
         self.db.add(booking)
