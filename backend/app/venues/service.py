@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -22,6 +23,29 @@ from app.venues.schemas import (
 DEFAULT_IMAGE = (
     "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=800&q=80"
 )
+
+
+def _parse_hhmm(value: str) -> int:
+    """Parse HH:MM (optional seconds) into minutes since midnight."""
+    parts = value.strip().split(":")
+    if len(parts) < 2:
+        raise ConflictError("Invalid time format")
+    try:
+        hours = int(parts[0])
+        minutes = int(parts[1])
+    except ValueError as exc:
+        raise ConflictError("Invalid time format") from exc
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        raise ConflictError("Invalid time format")
+    return hours * 60 + minutes
+
+
+def _times_overlap(start_a: str, end_a: str, start_b: str, end_b: str) -> bool:
+    a_start = _parse_hhmm(start_a)
+    a_end = _parse_hhmm(end_a)
+    b_start = _parse_hhmm(start_b)
+    b_end = _parse_hhmm(end_b)
+    return a_start < b_end and b_start < a_end
 
 
 class VenuesService:
@@ -60,6 +84,13 @@ class VenuesService:
         if not hall.available:
             raise ConflictError("Hall is not available")
 
+        self._ensure_no_overlap(
+            hall_id=payload.hall_id,
+            booking_date=payload.booking_date,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+        )
+
         total = self._price_for(hall, payload.duration_type, payload.add_ons)
         booking = HallBooking(
             user_id=user.id,
@@ -97,6 +128,14 @@ class VenuesService:
         for key, value in data.items():
             setattr(booking, key, value)
 
+        self._ensure_no_overlap(
+            hall_id=booking.hall_id,
+            booking_date=booking.booking_date,
+            start_time=booking.start_time,
+            end_time=booking.end_time,
+            exclude_booking_id=booking.id,
+        )
+
         hall = booking.hall or self.repository.get_hall(booking.hall_id)
         if hall is not None and (
             "duration_type" in data or "add_ons" in data
@@ -109,6 +148,25 @@ class VenuesService:
         refreshed = self.repository.get_booking_for_user(booking_id, user.id)
         assert refreshed is not None
         return self._booking_out(refreshed)
+
+    def _ensure_no_overlap(
+        self,
+        hall_id: UUID,
+        booking_date: date,
+        start_time: str,
+        end_time: str,
+        exclude_booking_id: UUID | None = None,
+    ) -> None:
+        candidates = self.repository.list_conflicting_bookings(
+            hall_id=hall_id,
+            booking_date=booking_date,
+            exclude_booking_id=exclude_booking_id,
+        )
+        for existing in candidates:
+            if _times_overlap(
+                start_time, end_time, existing.start_time, existing.end_time
+            ):
+                raise ConflictError("Hall is already booked for this time")
 
     def cancel_booking(self, user: Profile, booking_id: UUID) -> HallBookingOut:
         booking = self.repository.get_booking_for_user(booking_id, user.id)
