@@ -6,20 +6,50 @@ You can say:
 
 `The user starts in the React frontend, opens an event, selects seats, fills in booking details, and confirms payment. React loads seats from GET /api/v1/events/{event_id}/seats and then submits the booking with POST /api/v1/bookings. FastAPI receives the request in the router, the controller forwards it to the service, and the service checks seat availability, event status, and duplicate booking prevention. The repository layer performs the database access, the transaction is committed in PostgreSQL, and React shows the confirmation screen after the API response returns.`
 
-## 2) Clickable Code Map
+## 2) Frontend file layout (after split)
 
-### Frontend
+The old monolithic `App.tsx` is now modular. `App.tsx` only owns routing/state and API orchestration.
 
-- [SeatSelectionView](../frontend/src/app/App.tsx#L745)
-- [BookingDetailsView](../frontend/src/app/App.tsx#L861)
-- [PaymentView](../frontend/src/app/App.tsx#L885)
-- [ConfirmationView](../frontend/src/app/App.tsx#L988)
-- [refreshEvents](../frontend/src/app/App.tsx#L1875)
-- [refreshVenues](../frontend/src/app/App.tsx#L1888)
-- [refreshHallBookings](../frontend/src/app/App.tsx#L1901)
-- [loadHallsForVenue](../frontend/src/app/App.tsx#L1911)
-- [requireAuth](../frontend/src/app/App.tsx#L1964)
-- [handlePayment](../frontend/src/app/App.tsx#L1966)
+| Path | Responsibility |
+|------|----------------|
+| [App.tsx](../frontend/src/app/App.tsx) | View state, auth, payment/hall/event handlers |
+| [lib/types.ts](../frontend/src/app/lib/types.ts) | Shared UI types (`View`, `Seat`, `SeatFlowEvent`, …) |
+| [lib/mappers.ts](../frontend/src/app/lib/mappers.ts) | API → UI mapping (`mapApiEvent`, `mapApiSeat`, …) |
+| [lib/constants.ts](../frontend/src/app/lib/constants.ts) | Categories, filters, fallback mock data |
+| [lib/utils.ts](../frontend/src/app/lib/utils.ts) | Helpers (`cx`, `statusColor`, …) |
+| [lib/animations.tsx](../frontend/src/app/lib/animations.tsx) | Motion presets + `PageTransition` |
+| [components/atoms](../frontend/src/app/components/atoms/index.tsx) | Badge, stepper, QR, order summary |
+| [components/layout/Header.tsx](../frontend/src/app/components/layout/Header.tsx) | Top navigation |
+| [components/modals](../frontend/src/app/components/modals/) | Auth, hold, notifications, edit/delete drawers |
+| [components/views](../frontend/src/app/components/views/) | Page views (events, seats, booking, venues, …) |
+
+## 3) Clickable Code Map
+
+### Frontend — booking flow views
+
+- [SeatSelectionView](../frontend/src/app/components/views/SeatSelectionView.tsx#L13)
+- [BookingDetailsView](../frontend/src/app/components/views/BookingFlowViews.tsx#L9)
+- [PaymentView](../frontend/src/app/components/views/BookingFlowViews.tsx#L33)
+- [ConfirmationView](../frontend/src/app/components/views/BookingFlowViews.tsx#L136)
+- [EventsView](../frontend/src/app/components/views/EventsView.tsx#L10)
+- [EventDetailView](../frontend/src/app/components/views/EventDetailView.tsx#L6)
+- [HoldModal](../frontend/src/app/components/modals/HoldModal.tsx#L9)
+
+### Frontend — App orchestration
+
+- [App](../frontend/src/app/App.tsx#L51)
+- [refreshEvents](../frontend/src/app/App.tsx#L77)
+- [refreshVenues](../frontend/src/app/App.tsx#L90)
+- [refreshHallBookings](../frontend/src/app/App.tsx#L103)
+- [loadHallsForVenue](../frontend/src/app/App.tsx#L113)
+- [requireAuth](../frontend/src/app/App.tsx#L166)
+- [handlePayment](../frontend/src/app/App.tsx#L168)
+
+### Frontend — shared helpers
+
+- [mapApiSeat](../frontend/src/app/lib/mappers.ts#L25)
+- [mapApiBooking](../frontend/src/app/lib/mappers.ts#L45)
+- [api.createBooking](../frontend/src/lib/api.ts#L150)
 
 ### Backend
 
@@ -45,41 +75,47 @@ You can say:
 - [Event](../backend/app/events/models.py#L36)
 - [Profile](../backend/app/users/models.py#L13)
 
-## 3) Question Bank
+## 4) Question Bank
 
 ### React Frontend
 
 1. Which React component contains this feature?
 
-   The feature lives mainly in [SeatSelectionView](../frontend/src/app/App.tsx#L745), [BookingDetailsView](../frontend/src/app/App.tsx#L861), [PaymentView](../frontend/src/app/App.tsx#L885), and [ConfirmationView](../frontend/src/app/App.tsx#L988). The global flow is controlled by `App`.
+   The feature lives mainly in [SeatSelectionView](../frontend/src/app/components/views/SeatSelectionView.tsx#L13), [BookingDetailsView](../frontend/src/app/components/views/BookingFlowViews.tsx#L9), [PaymentView](../frontend/src/app/components/views/BookingFlowViews.tsx#L33), and [ConfirmationView](../frontend/src/app/components/views/BookingFlowViews.tsx#L136). Global flow and API orchestration stay in [App](../frontend/src/app/App.tsx#L51).
 
 2. Explain the component hierarchy for this feature.
 
    `App -> EventsView -> EventDetailView -> SeatSelectionView -> BookingDetailsView -> PaymentView -> ConfirmationView`
 
+   Supporting UI: `HoldModal` during seat hold, atoms like `BookingStepper` / `OrderSummary`.
+
 3. Which function is executed when the user interacts with this feature?
 
-   The main handlers are [toggleSeat](../frontend/src/app/App.tsx#L770), [validate](../frontend/src/app/App.tsx#L863), [submit](../frontend/src/app/App.tsx#L891), and [handlePayment](../frontend/src/app/App.tsx#L1966).
+   The main handlers are [toggleSeat](../frontend/src/app/components/views/SeatSelectionView.tsx#L38), [validate](../frontend/src/app/components/views/BookingFlowViews.tsx#L11), [submit](../frontend/src/app/components/views/BookingFlowViews.tsx#L39), and [handlePayment](../frontend/src/app/App.tsx#L168).
 
 4. Walk me through the frontend flow from the user action until the API request is sent.
 
-   The user selects an event, seat data is fetched with `api.listSeats(event.id)`, the user chooses seats, fills booking details, passes validation, and then [handlePayment](../frontend/src/app/App.tsx#L1966) sends `api.createBooking(...)`.
+   The user selects an event, seat data is fetched with `api.listSeats(event.id)` inside `SeatSelectionView`, the user chooses seats, fills booking details, passes validation, and then [handlePayment](../frontend/src/app/App.tsx#L168) sends `api.createBooking(...)`.
 
 5. Which React hooks did you use and why?
 
-   `useState` stores UI and form state, `useEffect` loads seats and events, `useCallback` stabilizes handlers like [handlePayment](../frontend/src/app/App.tsx#L1966), and `useRef` is used for the hold timer.
+   `useState` stores UI and form state, `useEffect` loads seats and events, `useCallback` stabilizes handlers like seat toggles and refresh helpers in `App`, and `useRef` is used for the hold timer in `HoldModal`.
 
 6. How is state managed for this feature?
 
-   The top-level feature state is in `App.tsx` using `selectedEvent`, `selectedSeats`, `guestName`, `eventsLoading`, and `paying`.
+   Top-level feature state lives in `App.tsx`: `selectedEvent`, `selectedSeats`, `guestName`, `eventsLoading`, and `paying`. Local UI state (search filters, form fields, seat grid) lives inside each view file.
 
 7. How do you validate user input?
 
-   Validation happens in [BookingDetailsView](../frontend/src/app/App.tsx#L863) and [PaymentView](../frontend/src/app/App.tsx#L891). The frontend blocks empty name/email and incomplete card details.
+   Validation happens in [BookingDetailsView](../frontend/src/app/components/views/BookingFlowViews.tsx#L11) and [PaymentView](../frontend/src/app/components/views/BookingFlowViews.tsx#L39). The frontend blocks empty name/email and incomplete card details.
 
 8. How do you handle loading states?
 
-   `eventsLoading` handles event fetch status, local `loading` inside `SeatSelectionView` handles seat loading, and `paying` disables double submission during checkout.
+   `eventsLoading` in `App` handles event fetch status, local `loading` inside `SeatSelectionView` handles seat loading, and `paying` in `App` disables double submission during checkout.
+
+9. Why was `App.tsx` split into many files?
+
+   The monolith was hard to navigate for viva and maintenance. Shared types/mappers/constants moved under `lib/`, page UI under `components/views/`, overlays under `components/modals/`, and `App.tsx` kept only orchestration so each booking step has a clear file.
 
 ### Browser DevTools
 
@@ -89,7 +125,7 @@ You can say:
 
 2. Trigger the feature and identify the API request in the Network tab.
 
-   The booking request comes from [handlePayment](../frontend/src/app/App.tsx#L1966) and appears as `POST /api/v1/bookings`.
+   The booking request comes from [handlePayment](../frontend/src/app/App.tsx#L168) and appears as `POST /api/v1/bookings`.
 
 3. Show me the Request URL, HTTP Method, Request Headers, Request Payload, and Response.
 
@@ -115,7 +151,7 @@ You can say:
 
 1. Open React Developer Tools.
 
-   Open the Components tab and inspect `App` and the current page component.
+   Open the Components tab and inspect `App` and the current page component (for example `SeatSelectionView` or `PaymentView`).
 
 2. Show me the component hierarchy for your feature.
 
@@ -133,7 +169,7 @@ You can say:
 
 3. Use your feature and stop the recording.
 
-   Stop after the confirmation view appears. The meaningful commits are when `selectedSeats`, `paying`, and `view` change.
+   Stop after the confirmation view appears. The meaningful commits are when `selectedSeats`, `paying`, and `view` change in `App`.
 
 ### Backend MVC
 
@@ -255,7 +291,7 @@ You can say:
 
 1. Explain this function line by line.
 
-   Use [handlePayment](../frontend/src/app/App.tsx#L1966) as the main example.
+   Use [handlePayment](../frontend/src/app/App.tsx#L168) as the main example.
 
 2. Why did you write this function?
 
@@ -271,9 +307,8 @@ You can say:
 
 5. Why did you choose this implementation?
 
-   It is simple to explain, easy to maintain, and protects against double booking.
+   It is simple to explain, easy to maintain, and protects against double booking. The frontend is modular so each booking step maps to a clear file for viva demos.
 
 6. If you had more time, what improvements would you make?
 
-   I would split `App.tsx`, add stronger server-side locking, and add more tests.
-
+   I would add stronger server-side locking for concurrent seat holds, more automated tests for the booking path, and optionally React Router instead of the current `view` state machine in `App`.
