@@ -6,19 +6,47 @@ You can say:
 
 `The user starts in the React venue browser, opens a venue, chooses a hall, fills booking details, and confirms the booking. React loads venues from GET /api/v1/venues and halls from GET /api/v1/venues/{venue_id}/halls. When the user confirms, React sends POST /api/v1/hall-bookings. The FastAPI router receives the request, the controller forwards it to the service, and the service checks venue and hall availability, calculates the total price, and saves the booking through the repository. The response goes back to React, which shows the hall booking confirmation screen.`
 
-## 2) Clickable Code Map
+## 2) Frontend file layout (after split)
 
-### Frontend
+The old monolithic `App.tsx` is now modular. `App.tsx` only owns routing/state and API orchestration for hall booking.
 
-- [VenueBrowseView](../frontend/src/app/App.tsx#L1026)
-- [VenueDetailView](../frontend/src/app/App.tsx#L1070)
-- [HallBookingView](../frontend/src/app/App.tsx#L1112)
-- [HallConfirmationView](../frontend/src/app/App.tsx#L1168)
-- [refreshVenues](../frontend/src/app/App.tsx#L1888)
-- [refreshHallBookings](../frontend/src/app/App.tsx#L1901)
-- [loadHallsForVenue](../frontend/src/app/App.tsx#L1911)
-- [requireAuth](../frontend/src/app/App.tsx#L1964)
-- [handleHallConfirm](../frontend/src/app/App.tsx#L1985)
+| Path | Responsibility |
+|------|----------------|
+| [App.tsx](../frontend/src/app/App.tsx) | Venue/hall state, `loadHallsForVenue`, `handleHallConfirm` |
+| [lib/types.ts](../frontend/src/app/lib/types.ts) | Shared UI types (`Venue`, `Hall`, `HallBooking`, …) |
+| [lib/mappers.ts](../frontend/src/app/lib/mappers.ts) | API → UI mapping (`mapApiVenue`, `mapApiHall`, `mapApiHallBooking`) |
+| [lib/constants.ts](../frontend/src/app/lib/constants.ts) | Venue types, booking purposes, add-on options |
+| [components/views/VenueViews.tsx](../frontend/src/app/components/views/VenueViews.tsx) | Browse, detail, hall form, confirmation views |
+| [components/views/DashboardView.tsx](../frontend/src/app/components/views/DashboardView.tsx) | My Bookings (venue tab: edit/cancel hall bookings) |
+| [components/modals/EditHallBookingDrawer.tsx](../frontend/src/app/components/modals/EditHallBookingDrawer.tsx) | Edit existing hall booking |
+| [components/atoms](../frontend/src/app/components/atoms/index.tsx) | Shared UI atoms (`Badge`, `StarsRow`, …) |
+
+## 3) Clickable Code Map
+
+### Frontend — hall booking views
+
+- [VenueBrowseView](../frontend/src/app/components/views/VenueViews.tsx#L10)
+- [VenueDetailView](../frontend/src/app/components/views/VenueViews.tsx#L54)
+- [HallBookingView](../frontend/src/app/components/views/VenueViews.tsx#L96)
+- [HallConfirmationView](../frontend/src/app/components/views/VenueViews.tsx#L152)
+- [DashboardView](../frontend/src/app/components/views/DashboardView.tsx#L14)
+- [EditHallBookingDrawer](../frontend/src/app/components/modals/EditHallBookingDrawer.tsx)
+
+### Frontend — App orchestration
+
+- [App](../frontend/src/app/App.tsx#L51)
+- [refreshVenues](../frontend/src/app/App.tsx#L90)
+- [refreshHallBookings](../frontend/src/app/App.tsx#L103)
+- [loadHallsForVenue](../frontend/src/app/App.tsx#L113)
+- [requireAuth](../frontend/src/app/App.tsx#L166)
+- [handleHallConfirm](../frontend/src/app/App.tsx#L187)
+
+### Frontend — shared helpers
+
+- [mapApiVenue](../frontend/src/app/lib/mappers.ts#L60)
+- [mapApiHall](../frontend/src/app/lib/mappers.ts#L77)
+- [mapApiHallBooking](../frontend/src/app/lib/mappers.ts#L94)
+- [api.createHallBooking](../frontend/src/lib/api.ts#L164)
 
 ### Backend
 
@@ -27,10 +55,10 @@ You can say:
 - [halls list route](../backend/app/venues/router.py#L35)
 - [hall booking create route](../backend/app/venues/router.py#L48)
 - [venues controller create_booking](../backend/app/venues/controller.py#L36)
-- [venues service create_booking](../backend/app/venues/service.py#L53)
-- [venues repository create_booking](../backend/app/venues/repository.py#L72)
-- [venues repository get_venue](../backend/app/venues/repository.py#L26)
-- [venues repository get_hall](../backend/app/venues/repository.py#L40)
+- [venues service create_booking](../backend/app/venues/service.py#L77)
+- [venues repository create_booking](../backend/app/venues/repository.py#L88)
+- [venues repository get_venue](../backend/app/venues/repository.py#L27)
+- [venues repository get_hall](../backend/app/venues/repository.py#L43)
 
 ### Schemas and models
 
@@ -40,41 +68,47 @@ You can say:
 - [Hall](../backend/app/venues/models.py#L57)
 - [HallBooking](../backend/app/venues/models.py#L96)
 
-## 3) Question Bank
+## 4) Question Bank
 
 ### React Frontend
 
 1. Which React component contains this feature?
 
-   The feature lives mainly in [VenueBrowseView](../frontend/src/app/App.tsx#L1026), [VenueDetailView](../frontend/src/app/App.tsx#L1070), [HallBookingView](../frontend/src/app/App.tsx#L1112), and [HallConfirmationView](../frontend/src/app/App.tsx#L1168).
+   The feature lives mainly in [VenueBrowseView](../frontend/src/app/components/views/VenueViews.tsx#L10), [VenueDetailView](../frontend/src/app/components/views/VenueViews.tsx#L54), [HallBookingView](../frontend/src/app/components/views/VenueViews.tsx#L96), and [HallConfirmationView](../frontend/src/app/components/views/VenueViews.tsx#L152). Global flow and API orchestration stay in [App](../frontend/src/app/App.tsx#L51).
 
 2. Explain the component hierarchy for this feature.
 
    `App -> VenueBrowseView -> VenueDetailView -> HallBookingView -> HallConfirmationView`
 
+   Supporting UI: `DashboardView` for managing bookings, `EditHallBookingDrawer` for edits.
+
 3. Which function is executed when the user interacts with this feature?
 
-   The main functions are [loadHallsForVenue](../frontend/src/app/App.tsx#L1911) and [handleHallConfirm](../frontend/src/app/App.tsx#L1985).
+   The main functions are [loadHallsForVenue](../frontend/src/app/App.tsx#L113), form [validate](../frontend/src/app/components/views/VenueViews.tsx#L106) inside `HallBookingView`, and [handleHallConfirm](../frontend/src/app/App.tsx#L187).
 
 4. Walk me through the frontend flow from the user action until the API request is sent.
 
-   The user selects a venue, halls are loaded, the user selects a hall, fills the form in [HallBookingView](../frontend/src/app/App.tsx#L1112), and then [handleHallConfirm](../frontend/src/app/App.tsx#L1985) sends the booking payload.
+   The user selects a venue, [loadHallsForVenue](../frontend/src/app/App.tsx#L113) loads halls, the user selects a hall, fills the form in [HallBookingView](../frontend/src/app/components/views/VenueViews.tsx#L96), and then [handleHallConfirm](../frontend/src/app/App.tsx#L187) sends `api.createHallBooking(...)`.
 
 5. Which React hooks did you use and why?
 
-   `useState` stores selected venue, hall, form values, and loading state. `useEffect` fetches venue and hall data. `useCallback` keeps fetch handlers stable.
+   `useState` stores selected venue, hall, form values, and loading state. `useEffect` fetches venue and hall booking data in `App`. `useCallback` keeps `refreshVenues`, `refreshHallBookings`, and `loadHallsForVenue` stable.
 
 6. How is state managed for this feature?
 
-   `App.tsx` stores `[selectedVenue](../frontend/src/app/App.tsx#L1863)`, `[selectedHall](../frontend/src/app/App.tsx#L1864)`, `[venuesLoading](../frontend/src/app/App.tsx#L1867)`, `[hallsLoading](../frontend/src/app/App.tsx#L1868)`, `[hallBookings](../frontend/src/app/App.tsx#L1869)`, `[lastHallBooking](../frontend/src/app/App.tsx#L1870)`, and `[hallBookingBusy](../frontend/src/app/App.tsx#L1873)`.
+   Top-level state lives in `App.tsx`: [selectedVenue](../frontend/src/app/App.tsx#L65), [selectedHall](../frontend/src/app/App.tsx#L66), [venuesLoading](../frontend/src/app/App.tsx#L69), [hallsLoading](../frontend/src/app/App.tsx#L70), [hallBookings](../frontend/src/app/App.tsx#L71), [lastHallBooking](../frontend/src/app/App.tsx#L72), and [hallBookingBusy](../frontend/src/app/App.tsx#L75). Form fields and filters live inside `VenueViews.tsx`.
 
 7. How do you validate user input?
 
-   [HallBookingView](../frontend/src/app/App.tsx#L1112) validates date, purpose, guest count, and contact details before booking.
+   [HallBookingView](../frontend/src/app/components/views/VenueViews.tsx#L106) validates date, purpose, guest count, and contact details before booking.
 
 8. How do you handle loading states?
 
-   `venuesLoading`, `hallsLoading`, and `hallBookingBusy` keep the UI honest and prevent double submission.
+   `venuesLoading`, `hallsLoading`, and `hallBookingBusy` in `App` keep the UI honest and prevent double submission.
+
+9. Why was `App.tsx` split into many files?
+
+   The monolith was hard to navigate for viva and maintenance. Hall UI now lives in `VenueViews.tsx`, edit overlay in `EditHallBookingDrawer.tsx`, shared types/mappers under `lib/`, and `App.tsx` keeps only orchestration so each hall-booking step has a clear file.
 
 ### Browser DevTools
 
@@ -84,7 +118,7 @@ You can say:
 
 2. Trigger the feature and identify the API request in the Network tab.
 
-   The key request is [handleHallConfirm](../frontend/src/app/App.tsx#L1985) calling `api.createHallBooking(...)`.
+   The key request is [handleHallConfirm](../frontend/src/app/App.tsx#L187) calling `api.createHallBooking(...)`.
 
 3. Show me the Request URL, HTTP Method, Request Headers, Request Payload, and Response.
 
@@ -104,13 +138,13 @@ You can say:
 
 6. Which request in the Network tab belongs to your feature?
 
-   `POST /api/v1/hall-bookings`
+   `POST /api/v1/hall-bookings` (supporting: `GET /api/v1/venues`, `GET /api/v1/venues/{id}/halls`)
 
 ### React Developer Tools
 
 1. Open React Developer Tools.
 
-   Open the Components tab and inspect the current page component.
+   Open the Components tab and inspect `App` and the current page component (for example `HallBookingView`).
 
 2. Show me the component hierarchy for your feature.
 
@@ -128,7 +162,7 @@ You can say:
 
 3. Use your feature and stop the recording.
 
-   Stop after the confirmation screen appears. The important commits are when `selectedVenue`, `selectedHall`, `hallBookingBusy`, and `lastHallBooking` change.
+   Stop after the confirmation screen appears. The important commits are when `selectedVenue`, `selectedHall`, `hallBookingBusy`, and `lastHallBooking` change in `App`.
 
 ### Backend MVC
 
@@ -146,19 +180,19 @@ You can say:
 
 4. Which service method is called?
 
-   [venues service create_booking](../backend/app/venues/service.py#L53)
+   [venues service create_booking](../backend/app/venues/service.py#L77)
 
 5. Which repository method is called?
 
-   [venues repository create_booking](../backend/app/venues/repository.py#L72)
+   [venues repository create_booking](../backend/app/venues/repository.py#L88)
 
 6. Where is the business logic implemented?
 
-   In [venues service create_booking](../backend/app/venues/service.py#L53), where venue existence, hall availability, and total price are checked.
+   In [venues service create_booking](../backend/app/venues/service.py#L77), where venue existence, hall availability, and total price are checked.
 
 7. Where is the database access implemented?
 
-   In [venues repository get_venue](../backend/app/venues/repository.py#L26), [venues repository get_hall](../backend/app/venues/repository.py#L40), and [venues repository create_booking](../backend/app/venues/repository.py#L72).
+   In [venues repository get_venue](../backend/app/venues/repository.py#L27), [venues repository get_hall](../backend/app/venues/repository.py#L43), and [venues repository create_booking](../backend/app/venues/repository.py#L88).
 
 8. Why did you separate the Router, Controller, Service, and Repository layers?
 
@@ -166,7 +200,7 @@ You can say:
 
 9. Show me the complete backend flow in your code.
 
-   Start with [venues router](../backend/app/venues/router.py#L1), then [venues controller create_booking](../backend/app/venues/controller.py#L36), then [venues service create_booking](../backend/app/venues/service.py#L53), then [venues repository create_booking](../backend/app/venues/repository.py#L72).
+   Start with [venues router](../backend/app/venues/router.py#L1), then [venues controller create_booking](../backend/app/venues/controller.py#L36), then [venues service create_booking](../backend/app/venues/service.py#L77), then [venues repository create_booking](../backend/app/venues/repository.py#L88).
 
 ### API
 
@@ -250,7 +284,7 @@ You can say:
 
 1. Explain this function line by line.
 
-   Use [handleHallConfirm](../frontend/src/app/App.tsx#L1985) as the main example.
+   Use [handleHallConfirm](../frontend/src/app/App.tsx#L187) as the main example.
 
 2. Why did you write this function?
 
@@ -262,13 +296,12 @@ You can say:
 
 4. Explain this database query.
 
-   The repository methods in [venues/repository.py](../backend/app/venues/repository.py#L17) load venues, halls, and bookings, while the service decides the booking rules.
+   The repository methods in [venues/repository.py](../backend/app/venues/repository.py#L18) load venues, halls, and bookings, while the service decides the booking rules.
 
 5. Why did you choose this implementation?
 
-   It keeps the UI straightforward and the hall-booking rules centralized in the backend service.
+   It keeps the UI straightforward and the hall-booking rules centralized in the backend service. After the frontend split, each hall step maps to a clear file for viva demos.
 
 6. If you had more time, what improvements would you make?
 
-   I would add stricter date/time validation, server-side conflict checks for overlapping hall bookings, and more automated tests.
-
+   I would add stricter date/time validation, stronger server-side conflict checks for overlapping hall bookings, and more automated tests.
