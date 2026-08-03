@@ -237,7 +237,7 @@ DEMO_BOOKINGS = [
 DEMO_VENUES = [
     {
         "name": "Bashundhara International Convention City",
-        "type": "Convention Centre",
+        "type": "Convention Center",
         "address": "Purbachal Express Highway",
         "city": "Dhaka",
         "image": "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80",
@@ -339,7 +339,11 @@ def _ensure_venues(db) -> None:
     for spec in DEMO_VENUES:
         row = db.scalar(select(Venue).where(Venue.name == spec["name"]))
         if row is not None:
-            print(f"  = venue exists: {spec['name']}")
+            if row.type != spec["type"]:
+                row.type = spec["type"]
+                print(f"  ~ venue type updated: {spec['name']} -> {spec['type']}")
+            else:
+                print(f"  = venue exists: {spec['name']}")
             continue
         venue = Venue(
             name=spec["name"],

@@ -9,7 +9,14 @@ import { cx } from "../../lib/utils";
 
 export function VenueBrowseView({venues,loading,onSelectVenue}:{venues:Venue[];loading?:boolean;onSelectVenue:(v:Venue)=>void}) {
   const [search,setSearch]=useState(""), [typeFilter,setTypeFilter]=useState("All"), [sort,setSort]=useState("Rating");
-  const filtered=venues.filter(v=>(typeFilter==="All"||v.type===typeFilter)&&(v.name.toLowerCase().includes(search.toLowerCase())||v.city.toLowerCase().includes(search.toLowerCase()))).sort((a,b)=>sort==="Price"?a.priceFrom-b.priceFrom:b.rating-a.rating);
+  const typeMatches=(venueType:string,filter:string)=>{
+    if(filter==="All")return true;
+    const normalize=(s:string)=>s.trim().toLowerCase().replace(/\s+/g," ").replace(/centre/g,"center");
+    return normalize(venueType)===normalize(filter);
+  };
+  const filtered=venues
+    .filter(v=>typeMatches(v.type,typeFilter)&&(v.name.toLowerCase().includes(search.toLowerCase())||v.city.toLowerCase().includes(search.toLowerCase())||v.address.toLowerCase().includes(search.toLowerCase())))
+    .sort((a,b)=>sort==="Price"?a.priceFrom-b.priceFrom:b.rating-a.rating);
   return (
     <div>
       <div className="relative h-72 bg-gradient-to-br from-violet-900 via-violet-700 to-indigo-800 flex items-center justify-center overflow-hidden">
