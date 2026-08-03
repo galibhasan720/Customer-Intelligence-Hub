@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import UUID
 
 from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ForbiddenError, UnauthorizedError
+from app.core.roles import UserRole, is_organizer_or_admin
 from app.core.security import decode_access_token
 from app.database.session import get_db
 from app.users.models import Profile
@@ -32,7 +34,26 @@ def get_current_user(
     return user
 
 
+def require_roles(*roles: str) -> Callable[[Profile], Profile]:
+    """Return a dependency that requires the current user to have one of *roles*."""
+
+    allowed = set(roles)
+
+    def _dependency(user: Profile = Depends(get_current_user)) -> Profile:
+        if user.role not in allowed:
+            raise ForbiddenError("Insufficient permissions for this action")
+        return user
+
+    return _dependency
+
+
 def require_organizer(user: Profile = Depends(get_current_user)) -> Profile:
-    if user.role not in ("organizer", "admin"):
+    if not is_organizer_or_admin(user.role):
         raise ForbiddenError("Organizer role required")
+    return user
+
+
+def require_admin(user: Profile = Depends(get_current_user)) -> Profile:
+    if user.role != UserRole.ADMIN:
+        raise ForbiddenError("Admin role required")
     return user

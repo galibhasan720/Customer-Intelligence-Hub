@@ -3,11 +3,13 @@
 const TOKEN_KEY = "seatflow_token";
 const USER_KEY = "seatflow_user";
 
+export type UserRole = "customer" | "organizer" | "admin";
+
 export type AuthUser = {
   id: string;
   full_name: string;
   email: string;
-  role: string;
+  role: UserRole | string;
 };
 
 export function getToken(): string | null {
@@ -29,7 +31,25 @@ export function setSession(token: string, user: AuthUser): void {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
+export function updateStoredUser(user: AuthUser): void {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
 export function clearSession(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+}
+
+export function isOrganizerOrAdmin(role: string): boolean {
+  return role === "organizer" || role === "admin";
+}
+
+export function isAdmin(role: string): boolean {
+  return role === "admin";
+}
+
+export function roleLabel(role: string): string {
+  if (role === "admin") return "Admin";
+  if (role === "organizer") return "Organizer";
+  return "Customer";
 }

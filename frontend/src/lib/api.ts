@@ -131,6 +131,8 @@ export const api = {
     return request<ApiEvent[]>(`/api/v1/events${suffix}`);
   },
   myEvents: () => request<ApiEvent[]>("/api/v1/events/mine", {}, true),
+  organizerAnalytics: () =>
+    request<ApiOrganizerAnalytics>("/api/v1/analytics/organizer", {}, true),
   getEvent: (id: string) => request<ApiEvent>(`/api/v1/events/${id}`),
   createEvent: (body: Record<string, unknown>) =>
     request<ApiEvent>("/api/v1/events", {
@@ -175,6 +177,102 @@ export const api = {
     request<ApiHallBooking>(`/api/v1/hall-bookings/${id}/cancel`, {
       method: "POST",
     }, true),
+
+  adminListUsers: () =>
+    request<ApiAdminUser[]>("/api/v1/admin/users", {}, true),
+  adminUpdateUser: (id: string, body: { role?: string; is_active?: boolean }) =>
+    request<ApiAdminUser>(`/api/v1/admin/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }, true),
+  adminListCategories: () =>
+    request<ApiCategory[]>("/api/v1/admin/categories", {}, true),
+  adminCreateCategory: (body: {
+    name: string;
+    description?: string | null;
+    is_active?: boolean;
+  }) =>
+    request<ApiCategory>("/api/v1/admin/categories", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }, true),
+  adminUpdateCategory: (
+    id: string,
+    body: { name?: string; description?: string | null; is_active?: boolean },
+  ) =>
+    request<ApiCategory>(`/api/v1/admin/categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }, true),
+  adminListBookings: () =>
+    request<ApiAdminBooking[]>("/api/v1/admin/bookings", {}, true),
+  adminForceCancelBooking: (id: string) =>
+    request<ApiAdminBooking>(`/api/v1/admin/bookings/${id}/force-cancel`, {
+      method: "POST",
+    }, true),
+  adminListEvents: () =>
+    request<ApiEvent[]>("/api/v1/admin/events", {}, true),
+};
+
+export type ApiAdminUser = {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type ApiCategory = {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type ApiAdminBooking = {
+  id: string;
+  event_id: string;
+  event_title: string;
+  venue: string;
+  event_date: string;
+  seats: string[];
+  seat_ids: string[];
+  total: number;
+  status: string;
+  booked_at: string;
+  user_id: string;
+  user_email: string;
+  user_name: string;
+};
+
+export type ApiOrganizerAnalytics = {
+  total_bookings: number;
+  seats_sold: number;
+  seats_total: number;
+  estimated_revenue: number;
+  cancellation_rate: number;
+  active_events: number;
+  avg_ticket_price: number;
+  weekly_trend: { day: string; bookings: number }[];
+  status_distribution: { label: string; value: number; color: string }[];
+  revenue_by_event: { event: string; revenue: number; target: number; color: string }[];
+  category_breakdown: { name: string; value: number; fill: string }[];
+  top_by_occupancy: {
+    event_id: string;
+    title: string;
+    sold_seats: number;
+    total_seats: number;
+    occupancy_pct: number;
+  }[];
+  seat_availability: {
+    event_id: string;
+    title: string;
+    sold_seats: number;
+    total_seats: number;
+    occupancy_pct: number;
+  }[];
 };
 
 export type ApiVenue = {

@@ -3,7 +3,15 @@ import { Ticket } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { AnimatePresence } from "motion/react";
 import { api, ApiError } from "../lib/api";
-import { clearSession, getStoredUser, getToken, type AuthUser } from "../lib/auth";
+import {
+  clearSession,
+  getStoredUser,
+  getToken,
+  isAdmin,
+  isOrganizerOrAdmin,
+  updateStoredUser,
+  type AuthUser,
+} from "../lib/auth";
 import { PageTransition } from "./lib/animations";
 import {
   BASE_EVENTS,
@@ -39,6 +47,7 @@ import {
 import { DashboardView } from "./components/views/DashboardView";
 import { EventDetailView } from "./components/views/EventDetailView";
 import { EventsView } from "./components/views/EventsView";
+import { AdminView } from "./components/views/AdminView";
 import { OrganizerView } from "./components/views/OrganizerView";
 import { SeatSelectionView } from "./components/views/SeatSelectionView";
 import {
@@ -51,6 +60,7 @@ import {
 export default function App() {
   const [view,setView]=useState<View>("events");
   const [allEvents,setAllEvents]=useState<SeatFlowEvent[]>([]);
+  const [myEvents,setMyEvents]=useState<SeatFlowEvent[]>([]);
   const [eventsLoading,setEventsLoading]=useState(true);
   const [selectedEvent,setSelectedEvent]=useState<SeatFlowEvent|null>(null);
   const [selectedSeats,setSelectedSeats]=useState<Seat[]>([]);
@@ -84,6 +94,18 @@ export default function App() {
       setAllEvents(BASE_EVENTS);
     }finally{
       setEventsLoading(false);
+    }
+  },[]);
+
+  const refreshMyEvents=useCallback(async()=>{
+    if(!getToken()){setMyEvents([]);return;}
+    const stored=getStoredUser();
+    if(!stored||!isOrganizerOrAdmin(stored.role)){setMyEvents([]);return;}
+    try{
+      const rows=await api.myEvents();
+      setMyEvents(rows.map(mapApiEvent));
+    }catch{
+      setMyEvents([]);
     }
   },[]);
 
@@ -135,34 +157,94 @@ export default function App() {
   useEffect(()=>{document.documentElement.classList.toggle("dark",isDark);},[isDark]);
 
   useEffect(()=>{
-    const stored=getStoredUser();
-    if(stored&&getToken()){
+    const syncSession=async()=>{
+      const token=getToken();
+      const stored=getStoredUser();
+      if(!token||!stored)return;
       setIsLoggedIn(true);
       setUserName(stored.full_name);
       setUserRole(stored.role);
-      setOrganizerProfile(prev=>({...prev,name:stored.full_name,email:stored.email}));
+      setOrganizerProfile(prev=>({
+        ...DEFAULT_ORGANIZER_PROFILE,
+        name:stored.full_name,
+        email:stored.email,
+        memberSince:prev.email===stored.email&&prev.memberSince?prev.memberSince:DEFAULT_ORGANIZER_PROFILE.memberSince,
+      }));
+      try{
+        const me=await api.me();
+        const synced:AuthUser={id:me.id,full_name:me.full_name,email:me.email,role:me.role};
+        updateStoredUser(synced);
+        setUserName(synced.full_name);
+        setUserRole(synced.role);
+        setOrganizerProfile(prev=>({...prev,name:synced.full_name,email:synced.email}));
+      }catch{
+        clearSession();
+        setIsLoggedIn(false);
+        setUserName("");
+        setUserRole("customer");
+      }
       refreshHallBookings();
-    }
+      refreshMyEvents();
+    };
+    syncSession();
     api.health().catch(()=>toast.message("Backend not ready yet — start with npm run dev from repo root."));
     refreshEvents();
     refreshVenues();
-  },[refreshEvents,refreshVenues,refreshHallBookings]);
+  },[refreshEvents,refreshVenues,refreshHallBookings,refreshMyEvents]);
 
   useEffect(()=>{
     if(view==="dashboard"&&isLoggedIn) refreshHallBookings();
   },[view,isLoggedIn,refreshHallBookings]);
 
-  const navigate=(v:View)=>setView(v);
+  useEffect(()=>{
+    if(view==="organizer"&&isLoggedIn&&isOrganizerOrAdmin(userRole)) refreshMyEvents();
+  },[view,isLoggedIn,userRole,refreshMyEvents]);
+
+  const navigate=(v:View)=>{
+    const authRequired:View[]=["dashboard","organizer","admin","seat-selection","booking-details","payment","hall-booking"];
+    if(authRequired.includes(v)&&!isLoggedIn&&!getToken()){
+      setShowAuthModal(true);
+      toast.error("Please sign in to continue");
+      return;
+    }
+    if(v==="organizer"&&!isOrganizerOrAdmin(userRole)){
+      toast.error("Organizer account required");
+      setView("events");
+      return;
+    }
+    if(v==="admin"&&!isAdmin(userRole)){
+      toast.error("Admin account required");
+      setView("events");
+      return;
+    }
+    setView(v);
+  };
   const unreadCount=notifications.filter(n=>!n.read).length;
   const addNotification=(n:Omit<Notification,"id"|"read">)=>setNotifications(prev=>[{...n,id:`n-${Date.now()}`,read:false},...prev]);
   const handleAuth=(user:AuthUser)=>{
     setIsLoggedIn(true);
     setUserName(user.full_name);
     setUserRole(user.role);
-    setOrganizerProfile(prev=>({...prev,name:user.full_name,email:user.email}));
+    setOrganizerProfile({
+      ...DEFAULT_ORGANIZER_PROFILE,
+      name:user.full_name,
+      email:user.email,
+      memberSince:new Date().toLocaleString("en-GB",{month:"long",year:"numeric"}),
+    });
     refreshHallBookings();
+    if(isOrganizerOrAdmin(user.role)) refreshMyEvents();
+    else setMyEvents([]);
   };
-  const handleSignOut=()=>{clearSession();setIsLoggedIn(false);setUserName("");setUserRole("customer");setHallBookings([]);toast.info("You have been signed out.");};
+  const handleSignOut=()=>{
+    clearSession();
+    setIsLoggedIn(false);
+    setUserName("");
+    setUserRole("customer");
+    setHallBookings([]);
+    setMyEvents([]);
+    setView("events");
+    toast.info("You have been signed out.");
+  };
   const requireAuth=()=>{if(!isLoggedIn){setShowAuthModal(true);return false;}return true;};
 
   const handlePayment=async()=>{
@@ -269,7 +351,9 @@ export default function App() {
         vip_seats:8,
         standard_seats:Math.max(8,event.totalSeats-8),
       });
-      setAllEvents(prev=>[mapApiEvent(created),...prev]);
+      const mapped=mapApiEvent(created);
+      setMyEvents(prev=>[mapped,...prev]);
+      if(created.status==="Published") setAllEvents(prev=>[mapped,...prev]);
       toast.success("Event published to API");
     }catch(err){
       toast.error(err instanceof ApiError?err.message:"Failed to create event");
@@ -286,7 +370,15 @@ export default function App() {
         price:event.priceFrom,
         status:event.status==="draft"?"Draft":"Published",
       });
-      setAllEvents(prev=>prev.map(e=>e.id===event.id?mapApiEvent(updated):e));
+      const mapped=mapApiEvent(updated);
+      setMyEvents(prev=>prev.map(e=>e.id===event.id?mapped:e));
+      setAllEvents(prev=>{
+        if(updated.status==="Published"){
+          const exists=prev.some(e=>e.id===event.id);
+          return exists?prev.map(e=>e.id===event.id?mapped:e):[mapped,...prev];
+        }
+        return prev.filter(e=>e.id!==event.id);
+      });
       toast.success("Event updated");
     }catch(err){
       toast.error(err instanceof ApiError?err.message:"Failed to update event");
@@ -296,6 +388,7 @@ export default function App() {
   const handleDeleteEvent=async(id:string)=>{
     try{
       await api.deleteEvent(id);
+      setMyEvents(prev=>prev.filter(e=>e.id!==id));
       setAllEvents(prev=>prev.filter(e=>e.id!==id));
       toast.success("Event deleted");
     }catch(err){
@@ -310,7 +403,7 @@ export default function App() {
         {showAuthModal&&<AuthModal key="auth" onClose={()=>setShowAuthModal(false)} onAuth={handleAuth}/>}
         {showNotifications&&<NotificationPanel key="notif" notifications={notifications} onClose={()=>setShowNotifications(false)} onMarkAllRead={()=>setNotifications(prev=>prev.map(n=>({...n,read:true})))} onClearAll={()=>setNotifications([])} onMarkRead={id=>setNotifications(prev=>prev.map(n=>n.id===id?{...n,read:true}:n))}/>}
       </AnimatePresence>
-      <Header view={view} isLoggedIn={isLoggedIn} userName={userName} unreadCount={unreadCount} isDark={isDark} onNav={navigate} onOpenAuth={()=>setShowAuthModal(true)} onSignOut={handleSignOut} onToggleNotifications={()=>setShowNotifications(!showNotifications)} onToggleDark={()=>setIsDark(!isDark)}/>
+      <Header view={view} isLoggedIn={isLoggedIn} userName={userName} userRole={userRole} unreadCount={unreadCount} isDark={isDark} onNav={navigate} onOpenAuth={()=>setShowAuthModal(true)} onSignOut={handleSignOut} onToggleNotifications={()=>setShowNotifications(!showNotifications)} onToggleDark={()=>setIsDark(!isDark)}/>
       <main className="flex-1">
         {view==="events"&&eventsLoading&&<p className="text-center text-sm text-muted-foreground py-4">Loading events from API…</p>}
         <AnimatePresence mode="wait">
@@ -326,7 +419,28 @@ export default function App() {
             {view==="hall-booking"&&selectedVenue&&selectedHall&&<HallBookingView venue={selectedVenue} hall={selectedHall} onConfirm={handleHallConfirm} onBack={()=>navigate("venue-detail")}/>}
             {view==="hall-confirmation"&&lastHallBooking&&<HallConfirmationView booking={lastHallBooking} onBackVenues={()=>navigate("venue-browse")} onMyBookings={()=>navigate("dashboard")}/>}
             {view==="dashboard"&&<DashboardView hallBookings={hallBookings} halls={halls} onCancelHall={handleCancelHallBooking} onUpdateHall={handleUpdateHallBooking} addNotification={addNotification} isLoggedIn={isLoggedIn} onNeedAuth={()=>{setShowAuthModal(true);}}/>}
-            {view==="organizer"&&<OrganizerView events={allEvents} venues={venues} onAddEvent={handleAddEvent} onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent} profile={organizerProfile} onUpdateProfile={setOrganizerProfile}/>}
+            {view==="organizer"&&(
+              isOrganizerOrAdmin(userRole)
+                ? <OrganizerView events={myEvents} venues={venues} onAddEvent={handleAddEvent} onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent} profile={organizerProfile} onUpdateProfile={setOrganizerProfile}/>
+                : (
+                  <div className="max-w-lg mx-auto px-4 py-16 text-center">
+                    <h2 className="font-bold text-foreground text-lg mb-2" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Organizer account required</h2>
+                    <p className="text-sm text-muted-foreground mb-4">Register as an organizer or sign in with organizer@example.com to manage events.</p>
+                    <button onClick={()=>navigate("events")} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold">Back to Events</button>
+                  </div>
+                )
+            )}
+            {view==="admin"&&(
+              isAdmin(userRole)
+                ? <AdminView onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent}/>
+                : (
+                  <div className="max-w-lg mx-auto px-4 py-16 text-center">
+                    <h2 className="font-bold text-foreground text-lg mb-2" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Admin account required</h2>
+                    <p className="text-sm text-muted-foreground mb-4">Sign in with admin@example.com to access platform governance tools.</p>
+                    <button onClick={()=>navigate("events")} className="px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold">Back to Events</button>
+                  </div>
+                )
+            )}
           </PageTransition>
         </AnimatePresence>
       </main>

@@ -6,12 +6,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.core.roles import UserRole
+
 
 class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
-    role: str = Field(default="customer", pattern="^(customer|organizer)$")
+    role: str = Field(
+        default=UserRole.CUSTOMER,
+        pattern="^(customer|organizer)$",
+    )
 
 
 class LoginRequest(BaseModel):

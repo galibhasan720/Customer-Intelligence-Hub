@@ -101,9 +101,9 @@ export const HALLS: Hall[] = [
 ];
 
 export const DEFAULT_ORGANIZER_PROFILE: OrganizerProfile = {
-  name:"Rahim Uddin Ahmed", organizationName:"Dhaka Events Co.",
-  bio:"Professional event organizer with 8+ years of experience managing concerts, corporate events, and cultural programs across Bangladesh.",
-  phone:"+880 1711-234567", email:"rahim@dhakaevents.com", website:"www.dhakaevents.com",
-  city:"Dhaka", address:"House 12, Road 5, Gulshan 2, Dhaka-1212",
-  verified:true, eventsCreated:47, totalBookings:3240, rating:4.8, memberSince:"March 2019",
+  name:"", organizationName:"",
+  bio:"",
+  phone:"", email:"", website:"",
+  city:"", address:"",
+  verified:false, eventsCreated:0, totalBookings:0, rating:0, memberSince:new Date().toLocaleString("en-GB",{month:"long",year:"numeric"}),
 };

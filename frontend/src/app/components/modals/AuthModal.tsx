@@ -44,7 +44,7 @@ export function AuthModal({onClose,onAuth}:{onClose:()=>void;onAuth:(user:AuthUs
         <div className="bg-gradient-to-r from-blue-600/90 to-indigo-700/90 backdrop-blur-md px-6 py-5 text-white">
           <div className="flex items-center justify-between mb-1"><div className="flex items-center gap-2"><div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center"><Ticket size={14} className="text-white"/></div><span className="font-extrabold" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>SeatFlow</span></div><button onClick={onClose} className="text-white/70 hover:text-white"><X size={18}/></button></div>
           <p className="text-blue-100 text-sm mt-2">{tab==="signin"?"Sign in to manage your bookings":"Create your account to get started"}</p>
-          <p className="text-blue-200/80 text-xs mt-1">Demo: customer@example.com / password123</p>
+          <p className="text-blue-200/80 text-xs mt-1">Demo password123 — see demo-accounts/demo-credentials.md</p>
         </div>
         <div className="flex border-b border-white/20">{(["signin","register"] as const).map(t=><button key={t} onClick={()=>{setTab(t);setError("");}} className={cx("flex-1 py-3 text-sm font-semibold transition-colors",tab===t?"text-primary border-b-2 border-primary":"text-muted-foreground hover:text-foreground")}>{t==="signin"?"Sign In":"Register"}</button>)}</div>
         <div className="p-6 space-y-4">

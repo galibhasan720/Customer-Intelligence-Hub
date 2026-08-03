@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.roles import is_admin
 from app.events.models import Event
 from app.events.repository import EventsRepository
 from app.events.schemas import EventCreate, EventOut, EventUpdate
@@ -82,7 +83,7 @@ class EventsService:
         event = self.repository.get(event_id)
         if event is None:
             raise NotFoundError("Event not found")
-        if event.organizer_id != organizer.id and organizer.role != "admin":
+        if event.organizer_id != organizer.id and not is_admin(organizer.role):
             raise ForbiddenError("Not allowed to update this event")
         data = payload.model_dump(exclude_unset=True)
         if "category" in data:
@@ -98,7 +99,7 @@ class EventsService:
         event = self.repository.get(event_id)
         if event is None:
             raise NotFoundError("Event not found")
-        if event.organizer_id != organizer.id and organizer.role != "admin":
+        if event.organizer_id != organizer.id and not is_admin(organizer.role):
             raise ForbiddenError("Not allowed to delete this event")
         self.repository.delete(event)
         self.db.commit()

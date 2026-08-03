@@ -1,6 +1,8 @@
+export type UserRole = "customer" | "organizer" | "admin";
+
 export type View =
   | "events" | "event-detail" | "seat-selection" | "booking-details"
-  | "payment" | "confirmation" | "dashboard" | "organizer"
+  | "payment" | "confirmation" | "dashboard" | "organizer" | "admin"
   | "venue-browse" | "venue-detail" | "hall-booking" | "hall-confirmation";
 
 export type SeatStatus = "available" | "selected" | "held" | "reserved" | "sold" | "vip-available" | "accessible" | "companion" | "blocked";
