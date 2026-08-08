@@ -18,10 +18,17 @@ export const CAT_COLORS: Record<string, string> = {};
 CATEGORY_GROUPS.forEach(g => g.items.forEach(item => { CAT_COLORS[item] = g.color; }));
 
 export const BADGE_COLORS: Record<string, string> = {
-  blue:"bg-blue-100 text-blue-700", green:"bg-green-100 text-green-700", amber:"bg-amber-100 text-amber-700",
-  violet:"bg-violet-100 text-violet-700", red:"bg-red-100 text-red-700", slate:"bg-slate-100 text-slate-600",
-  pink:"bg-pink-100 text-pink-700", teal:"bg-teal-100 text-teal-700", orange:"bg-orange-100 text-orange-700",
-  emerald:"bg-emerald-100 text-emerald-700", indigo:"bg-indigo-100 text-indigo-700",
+  blue:"bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300",
+  green:"bg-green-100 text-green-800 dark:bg-green-950/70 dark:text-green-300",
+  amber:"bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300",
+  violet:"bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300",
+  red:"bg-red-100 text-red-800 dark:bg-red-950/70 dark:text-red-300",
+  slate:"bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  pink:"bg-pink-100 text-pink-800 dark:bg-pink-950/70 dark:text-pink-300",
+  teal:"bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-300",
+  orange:"bg-orange-100 text-orange-800 dark:bg-orange-950/70 dark:text-orange-300",
+  emerald:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300",
+  indigo:"bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300",
 };
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
@@ -70,8 +77,8 @@ export const SUGGESTED_TAGS_MORE = ["Educational","Corporate","Free Entry","Prem
 export const INITIAL_NOTIFICATIONS: Notification[] = [
   {id:"n-1",type:"booking_confirmed",title:"Booking Confirmed",message:"Your booking for Artcell Live — Dhaka Concert Night has been confirmed. Seats B5, B6 are yours!",timestamp:"2 min ago",read:false},
   {id:"n-2",type:"event_reminder",title:"Event Tomorrow",message:"Artcell Live — Dhaka Concert Night is tomorrow at 8:00 PM. Don't forget your tickets!",timestamp:"1 hour ago",read:false},
-  {id:"n-3",type:"new_event",title:"New Event Near You",message:"BPL Final: Dhaka vs Chattogram has just been listed. Get your seats before they sell out.",timestamp:"3 hours ago",read:false},
-  {id:"n-4",type:"payment_processed",title:"Payment Processed",message:"৳1,500 payment for DigitalBangladesh TechSummit 2025 has been processed successfully.",timestamp:"Yesterday",read:false},
+  {id:"n-3",type:"new_event",title:"New Event Near You",message:"BPL Final: Dhaka vs Chattogram has just been listed. Get your seats before they sell out.",timestamp:"3 hours ago",read:true},
+  {id:"n-4",type:"payment_processed",title:"Payment Processed",message:"৳1,500 payment for DigitalBangladesh TechSummit 2025 has been processed successfully.",timestamp:"Yesterday",read:true},
   {id:"n-5",type:"event_updated",title:"Event Updated",message:"Nuruldiner Sarajiban — Stage Play has updated its start time to 7:30 PM.",timestamp:"Yesterday",read:true},
   {id:"n-6",type:"hall_booking_confirmed",title:"Hall Booking Confirmed",message:"Your booking for Grand Ballroom at Bashundhara Convention City on 15 Jul 2025 is confirmed.",timestamp:"2 days ago",read:true},
   {id:"n-7",type:"booking_cancelled",title:"Booking Cancelled",message:"Your booking BK-09911 has been cancelled. Refund is being processed.",timestamp:"3 days ago",read:true},

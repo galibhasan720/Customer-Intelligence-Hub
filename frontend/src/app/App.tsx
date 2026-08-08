@@ -4,6 +4,7 @@ import { Toaster, toast } from "sonner";
 import { AnimatePresence } from "motion/react";
 import { api, ApiError } from "../lib/api";
 import { clearSession, getStoredUser, getToken, type AuthUser } from "../lib/auth";
+import { Skeleton } from "./components/atoms";
 import { PageTransition } from "./lib/animations";
 import {
   BASE_EVENTS,
@@ -55,9 +56,11 @@ export default function App() {
   const [selectedEvent,setSelectedEvent]=useState<SeatFlowEvent|null>(null);
   const [selectedSeats,setSelectedSeats]=useState<Seat[]>([]);
   const [guestName,setGuestName]=useState("");
+  const [guestEmail,setGuestEmail]=useState("");
   const [isLoggedIn,setIsLoggedIn]=useState(false);
   const [userName,setUserName]=useState("");
   const [userRole,setUserRole]=useState("customer");
+  const [userEmail,setUserEmail]=useState("");
   const [showAuthModal,setShowAuthModal]=useState(false);
   const [notifications,setNotifications]=useState<Notification[]>(INITIAL_NOTIFICATIONS);
   const [showNotifications,setShowNotifications]=useState(false);
@@ -70,7 +73,9 @@ export default function App() {
   const [hallsLoading,setHallsLoading]=useState(false);
   const [hallBookings,setHallBookings]=useState<HallBooking[]>([]);
   const [lastHallBooking,setLastHallBooking]=useState<HallBooking|null>(null);
-  const [isDark,setIsDark]=useState(false);
+  const [isDark,setIsDark]=useState(()=>{
+    try{return localStorage.getItem("seatflow_theme")==="dark";}catch{return false;}
+  });
   const [paying,setPaying]=useState(false);
   const [hallBookingBusy,setHallBookingBusy]=useState(false);
 
@@ -132,7 +137,10 @@ export default function App() {
     }
   },[]);
 
-  useEffect(()=>{document.documentElement.classList.toggle("dark",isDark);},[isDark]);
+  useEffect(()=>{
+    document.documentElement.classList.toggle("dark",isDark);
+    try{localStorage.setItem("seatflow_theme",isDark?"dark":"light");}catch{/* ignore */}
+  },[isDark]);
 
   useEffect(()=>{
     const stored=getStoredUser();
@@ -140,6 +148,9 @@ export default function App() {
       setIsLoggedIn(true);
       setUserName(stored.full_name);
       setUserRole(stored.role);
+      setUserEmail(stored.email);
+      setGuestName(stored.full_name);
+      setGuestEmail(stored.email);
       setOrganizerProfile(prev=>({...prev,name:stored.full_name,email:stored.email}));
       refreshHallBookings();
     }
@@ -159,10 +170,13 @@ export default function App() {
     setIsLoggedIn(true);
     setUserName(user.full_name);
     setUserRole(user.role);
+    setUserEmail(user.email);
+    setGuestName(user.full_name);
+    setGuestEmail(user.email);
     setOrganizerProfile(prev=>({...prev,name:user.full_name,email:user.email}));
     refreshHallBookings();
   };
-  const handleSignOut=()=>{clearSession();setIsLoggedIn(false);setUserName("");setUserRole("customer");setHallBookings([]);toast.info("You have been signed out.");};
+  const handleSignOut=()=>{clearSession();setIsLoggedIn(false);setUserName("");setUserRole("customer");setUserEmail("");setHallBookings([]);toast.info("You have been signed out.");};
   const requireAuth=()=>{if(!isLoggedIn){setShowAuthModal(true);return false;}return true;};
 
   const handlePayment=async()=>{
@@ -310,31 +324,34 @@ export default function App() {
         {showAuthModal&&<AuthModal key="auth" onClose={()=>setShowAuthModal(false)} onAuth={handleAuth}/>}
         {showNotifications&&<NotificationPanel key="notif" notifications={notifications} onClose={()=>setShowNotifications(false)} onMarkAllRead={()=>setNotifications(prev=>prev.map(n=>({...n,read:true})))} onClearAll={()=>setNotifications([])} onMarkRead={id=>setNotifications(prev=>prev.map(n=>n.id===id?{...n,read:true}:n))}/>}
       </AnimatePresence>
-      <Header view={view} isLoggedIn={isLoggedIn} userName={userName} unreadCount={unreadCount} isDark={isDark} onNav={navigate} onOpenAuth={()=>setShowAuthModal(true)} onSignOut={handleSignOut} onToggleNotifications={()=>setShowNotifications(!showNotifications)} onToggleDark={()=>setIsDark(!isDark)}/>
+      <Header view={view} isLoggedIn={isLoggedIn} userName={userName} userRole={userRole} unreadCount={unreadCount} isDark={isDark} onNav={navigate} onOpenAuth={()=>setShowAuthModal(true)} onSignOut={handleSignOut} onToggleNotifications={()=>setShowNotifications(!showNotifications)} onToggleDark={()=>setIsDark(d=>!d)}/>
       <main className="flex-1">
-        {view==="events"&&eventsLoading&&<p className="text-center text-sm text-muted-foreground py-4">Loading events from API…</p>}
+        {view==="events"&&eventsLoading&&(
+          <div className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {Array.from({length:8}).map((_,i)=><Skeleton key={i} className="h-72"/>)}
+          </div>
+        )}
         <AnimatePresence mode="wait">
           <PageTransition k={view}>
-            {view==="events"&&<EventsView events={allEvents} onSelectEvent={event=>{setSelectedEvent(event);navigate("event-detail");}}/>}
+            {view==="events"&&!eventsLoading&&<EventsView events={allEvents} onSelectEvent={event=>{setSelectedEvent(event);navigate("event-detail");}}/>}
             {view==="event-detail"&&selectedEvent&&<EventDetailView event={selectedEvent} onSelectSeats={()=>{if(!requireAuth())return;navigate("seat-selection");}} onBack={()=>navigate("events")}/>}
             {view==="seat-selection"&&selectedEvent&&<SeatSelectionView event={selectedEvent} onContinue={seats=>{setSelectedSeats(seats);navigate("booking-details");}} onBack={()=>navigate("event-detail")}/>}
-            {view==="booking-details"&&selectedEvent&&<BookingDetailsView event={selectedEvent} seats={selectedSeats} onConfirm={name=>{setGuestName(name);navigate("payment");}} onBack={()=>navigate("seat-selection")}/>}
-            {view==="payment"&&selectedEvent&&<PaymentView event={selectedEvent} seats={selectedSeats} name={guestName} onPay={()=>{if(!paying)handlePayment();}} onBack={()=>navigate("booking-details")}/>}
+            {view==="booking-details"&&selectedEvent&&<BookingDetailsView event={selectedEvent} seats={selectedSeats} initialName={guestName||userName} initialEmail={guestEmail||userEmail} onConfirm={(name,email)=>{setGuestName(name);setGuestEmail(email);navigate("payment");}} onBack={()=>navigate("seat-selection")}/>}
+            {view==="payment"&&selectedEvent&&<PaymentView event={selectedEvent} seats={selectedSeats} name={guestName} paying={paying} onPay={()=>{if(!paying)handlePayment();}} onBack={()=>navigate("booking-details")}/>}
             {view==="confirmation"&&selectedEvent&&<ConfirmationView event={selectedEvent} seats={selectedSeats} name={guestName} onDone={()=>navigate("events")}/>}
             {view==="venue-browse"&&<VenueBrowseView venues={venues} loading={venuesLoading} onSelectVenue={venue=>{setSelectedVenue(venue);loadHallsForVenue(venue.id);navigate("venue-detail");}}/>}
             {view==="venue-detail"&&selectedVenue&&<VenueDetailView venue={selectedVenue} halls={halls.filter(h=>h.venueId===selectedVenue.id)} loading={hallsLoading} onSelectHall={hall=>{setSelectedHall(hall);navigate("hall-booking");}} onBack={()=>navigate("venue-browse")}/>}
-            {view==="hall-booking"&&selectedVenue&&selectedHall&&<HallBookingView venue={selectedVenue} hall={selectedHall} onConfirm={handleHallConfirm} onBack={()=>navigate("venue-detail")}/>}
+            {view==="hall-booking"&&selectedVenue&&selectedHall&&<HallBookingView venue={selectedVenue} hall={selectedHall} busy={hallBookingBusy} onConfirm={handleHallConfirm} onBack={()=>navigate("venue-detail")}/>}
             {view==="hall-confirmation"&&lastHallBooking&&<HallConfirmationView booking={lastHallBooking} onBackVenues={()=>navigate("venue-browse")} onMyBookings={()=>navigate("dashboard")}/>}
             {view==="dashboard"&&<DashboardView hallBookings={hallBookings} halls={halls} onCancelHall={handleCancelHallBooking} onUpdateHall={handleUpdateHallBooking} addNotification={addNotification} isLoggedIn={isLoggedIn} onNeedAuth={()=>{setShowAuthModal(true);}}/>}
             {view==="organizer"&&<OrganizerView events={allEvents} venues={venues} onAddEvent={handleAddEvent} onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent} profile={organizerProfile} onUpdateProfile={setOrganizerProfile}/>}
           </PageTransition>
         </AnimatePresence>
       </main>
-      <footer className="bg-slate-900/95 backdrop-blur-sm text-slate-400 py-8 mt-12">
+      <footer className="border-t border-border bg-card mt-12 py-8">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2"><div className="w-6 h-6 bg-primary rounded flex items-center justify-center"><Ticket size={12} className="text-white"/></div><span className="font-bold text-white text-sm" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>SeatFlow</span></div>
-          <p className="text-xs text-slate-500">© 2025 SeatFlow. Event Seat Booking & Management System.</p>
-          <div className="flex gap-4 text-xs">{["Privacy","Terms","Support","API"].map(link=><button key={link} className="hover:text-white transition-colors">{link}</button>)}</div>
+          <div className="flex items-center gap-2"><div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center"><Ticket size={12} className="text-white"/></div><span className="font-display font-bold text-foreground text-sm">SeatFlow</span></div>
+          <p className="text-xs text-muted-foreground">© 2026 SeatFlow. Event seat booking & venue management.</p>
         </div>
       </footer>
     </div>
