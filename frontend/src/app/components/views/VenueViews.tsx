@@ -1,10 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Building2, Check, CheckCircle, ChevronDown, Loader2, MapPin, Phone, Search, Users } from "lucide-react";
+import { api, type ApiAddOn } from "../../../lib/api";
 import { Badge, BookingStepper, EmptyState, Field, FilterChip, Skeleton, StarsRow, Surface } from "../atoms";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { ADD_ON_OPTIONS, BOOKING_PURPOSES, VENUE_TYPES } from "../../lib/constants";
 import type { Hall, HallBooking, Venue } from "../../lib/types";
 import { cx } from "../../lib/utils";
+
+type AddOnOption = { id: string; label: string; price: number; unit: string };
+
+function isPerPerson(unit: string) {
+  return unit === "per_person" || unit === "per person";
+}
+
+function mapAddOn(row: ApiAddOn | AddOnOption): AddOnOption {
+  return { id: row.id, label: row.label, price: Number(row.price), unit: row.unit };
+}
 
 export function VenueBrowseView({ venues, loading, onSelectVenue }: { venues: Venue[]; loading?: boolean; onSelectVenue: (v: Venue) => void }) {
   const [search, setSearch] = useState(""),
@@ -336,6 +347,18 @@ export function HallBookingView({
     [contactEmail, setContactEmail] = useState(""),
     [specialReqs, setSpecialReqs] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [catalog, setCatalog] = useState<AddOnOption[]>(ADD_ON_OPTIONS);
+  useEffect(() => {
+    let cancelled = false;
+    api.listAddOns()
+      .then((rows) => {
+        if (!cancelled && rows?.length) setCatalog(rows.map(mapAddOn));
+      })
+      .catch(() => {
+        if (!cancelled) setCatalog(ADD_ON_OPTIONS);
+      });
+    return () => { cancelled = true; };
+  }, []);
   const basePrice =
     durationType === "full-day"
       ? hall.priceFullDay
@@ -347,9 +370,9 @@ export function HallBookingView({
             return hall.pricePerHour * Math.max(1, eh - sh);
           })();
   const addOnTotal = addOns.reduce((sum, id) => {
-    const ao = ADD_ON_OPTIONS.find((a) => a.id === id);
+    const ao = catalog.find((a) => a.id === id);
     if (!ao) return sum;
-    return sum + (ao.unit === "per person" ? ao.price * guestCount : ao.price);
+    return sum + (isPerPerson(ao.unit) ? ao.price * guestCount : ao.price);
   }, 0);
   const totalPrice = basePrice + addOnTotal;
   const toggleAddOn = (id: string) => setAddOns((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
@@ -473,7 +496,7 @@ export function HallBookingView({
           <Surface raised className="p-6">
             <h2 className="font-display font-bold text-lg text-foreground mb-5">3. Add-ons (Optional)</h2>
             <div className="space-y-3">
-              {ADD_ON_OPTIONS.map((ao) => (
+              {catalog.map((ao) => (
                 <label
                   key={ao.id}
                   className={cx(
@@ -487,7 +510,7 @@ export function HallBookingView({
                   </div>
                   <span className="text-sm font-semibold text-primary">
                     ৳{ao.price.toLocaleString()}
-                    {ao.unit === "per person" ? "/person" : ""}
+                    {isPerPerson(ao.unit) ? "/person" : ""}
                   </span>
                 </label>
               ))}
@@ -537,8 +560,9 @@ export function HallBookingView({
                 <span>৳{basePrice.toLocaleString()}</span>
               </div>
               {addOns.map((id) => {
-                const ao = ADD_ON_OPTIONS.find((a) => a.id === id)!;
-                const p = ao.unit === "per person" ? ao.price * guestCount : ao.price;
+                const ao = catalog.find((a) => a.id === id);
+                if (!ao) return null;
+                const p = isPerPerson(ao.unit) ? ao.price * guestCount : ao.price;
                 return (
                   <div key={id} className="flex justify-between text-muted-foreground text-xs">
                     <span>{ao.label}</span>

@@ -2,7 +2,9 @@
 
 FastAPI API for the Seat-Flow MVP.
 
-**Stack:** FastAPI + Uvicorn → Hugging Face Spaces (Docker) · Supabase PostgreSQL + Auth JWT
+**Stack:** FastAPI + Uvicorn → Hugging Face Spaces (Docker) · PostgreSQL (local Docker or Supabase) · **local JWT + bcrypt** (not Supabase Auth)
+
+MVC: router → controller → service → repository. RBAC: `customer` | `organizer` | `admin` — see [docs/authentication.md](docs/authentication.md) and [docs/api_endpoints.md](docs/api_endpoints.md).
 
 ## Prerequisites
 
@@ -12,7 +14,7 @@ FastAPI API for the Seat-Flow MVP.
 | Git | any recent | `git --version` |
 | Docker Desktop | optional locally; required for HF image smoke | `docker --version` |
 
-Also create a free **Supabase** project (Database URL + API keys) before filling `.env`.
+For local Postgres: `docker compose up -d postgres` (see `.env.example`). A hosted **Supabase** project still works as the database only — auth stays local JWT.
 
 ## Local setup
 
@@ -22,12 +24,17 @@ python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 Copy-Item .env.example .env
-# Edit .env with your Supabase values
+# Set DATABASE_URL + JWT_SECRET (local Docker Postgres is enough)
+python -m scripts.migrations
+python -m scripts.seed_data
 uvicorn app.main:app --reload --port 8000
 ```
 
+Seed logins (password `password123`): `customer@example.com`, `organizer@example.com`, `admin@example.com`.
+
 - Health: http://localhost:8000/health  
 - DB probe: http://localhost:8000/health/db (`skipped` until `DATABASE_URL` is set)
+- Tests: `pytest` (in-memory SQLite; no Docker required)
 
 ## Environment variables
 
@@ -37,13 +44,15 @@ See [`.env.example`](.env.example). Never commit `.env`.
 |----------|---------|
 | `APP_ENV` | `local` / `production` |
 | `CORS_ORIGINS` | Comma-separated frontend origins (e.g. `http://localhost:5173`) |
-| `DATABASE_URL` | Supabase Postgres connection URI |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Public anon key (not for privileged writes) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Backend-only; never expose to the browser |
-| `SUPABASE_JWT_SECRET` | Validate Supabase Auth JWTs |
+| `DATABASE_URL` | Postgres connection URI (local Docker or Supabase) |
+| `JWT_SECRET` | HS256 secret for local access tokens |
+| `JWT_EXPIRE_MINUTES` | Token TTL (default 10080 = 7 days) |
+| `SUPABASE_URL` | Optional; unused for auth |
+| `SUPABASE_ANON_KEY` | Optional |
+| `SUPABASE_SERVICE_ROLE_KEY` | Backend-only if used; never expose to the browser |
+| `SUPABASE_JWT_SECRET` | Fallback JWT secret only; not Supabase Auth |
 
-Booking writes must go through this API so PostgreSQL constraints enforce no double-booking. Do not use the service role key from the frontend.
+Booking writes must go through this API so constraints enforce no double-booking. Reminder emails/SMS are out of scope; `POST /api/v1/admin/notifications/reminders` inserts inbox rows for events in the next 48 hours (no background worker).
 
 ## Docker (Hugging Face Spaces–compatible)
 

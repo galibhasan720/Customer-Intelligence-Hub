@@ -23,8 +23,12 @@ SQL_DIR = Path(__file__).resolve().parent / "sql"
 
 def _migration_files(database_url: str | None) -> tuple[str, ...]:
     if is_local_database_url(database_url):
-        return ("002_local_init_schema.sql", "003_venues_schema.sql")
-    return ("001_init_schema.sql", "003_venues_schema.sql")
+        return (
+            "002_local_init_schema.sql",
+            "003_venues_schema.sql",
+            "004_full_crud_rbac.sql",
+        )
+    return ("001_init_schema.sql", "003_venues_schema.sql", "004_full_crud_rbac.sql")
 
 
 

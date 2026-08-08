@@ -1,5 +1,48 @@
-import { formatEventDate, type ApiBooking, type ApiEvent, type ApiHall, type ApiHallBooking, type ApiSeat, type ApiVenue } from "../../lib/api";
-import type { Booking, Hall, HallBooking, Seat, SeatFlowEvent, SeatStatus, Venue } from "./types";
+import { formatEventDate, type ApiBooking, type ApiEvent, type ApiHall, type ApiHallBooking, type ApiNotification, type ApiSeat, type ApiUser, type ApiVenue } from "../../lib/api";
+import type { Booking, Hall, HallBooking, Notification, OrganizerProfile, Seat, SeatFlowEvent, SeatStatus, Venue } from "./types";
+
+const NOTIF_TYPES = new Set<Notification["type"]>([
+  "booking_confirmed",
+  "booking_cancelled",
+  "event_reminder",
+  "event_updated",
+  "hold_expired",
+  "payment_processed",
+  "hall_booking_confirmed",
+  "new_event",
+]);
+
+export function mapApiNotification(n: ApiNotification): Notification {
+  return {
+    id: n.id,
+    type: NOTIF_TYPES.has(n.type as Notification["type"]) ? (n.type as Notification["type"]) : "new_event",
+    title: n.title || "Notification",
+    message: n.message,
+    timestamp: n.created_at ? new Date(n.created_at).toLocaleString() : "Just now",
+    read: n.read || n.status === "read",
+  };
+}
+
+export function mapApiProfile(u: ApiUser): OrganizerProfile {
+  const since = u.member_since
+    ? new Date(u.member_since).toLocaleDateString("en-GB", { month: "long", year: "numeric" })
+    : "";
+  return {
+    name: u.full_name,
+    organizationName: u.organization_name || "",
+    bio: u.bio || "",
+    phone: u.phone || "",
+    email: u.email,
+    website: u.website || "",
+    city: u.city || "",
+    address: u.address || "",
+    verified: Boolean(u.verified),
+    eventsCreated: u.events_created ?? 0,
+    totalBookings: u.total_bookings ?? 0,
+    rating: 4.8,
+    memberSince: since,
+  };
+}
 
 export function mapApiEvent(e: ApiEvent): SeatFlowEvent {
   const { date, time } = formatEventDate(e.event_date);

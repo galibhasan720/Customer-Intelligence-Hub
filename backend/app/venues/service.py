@@ -8,16 +8,22 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.addons.models import AddOn
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.notifications.service import notify
 from app.users.models import Profile
-from app.venues.models import HallBooking
+from app.venues.models import Hall, HallBooking, Venue
 from app.venues.repository import VenuesRepository
 from app.venues.schemas import (
     HallBookingCreate,
     HallBookingOut,
     HallBookingUpdate,
+    HallCreate,
     HallOut,
+    HallUpdate,
+    VenueCreate,
     VenueOut,
+    VenueUpdate,
 )
 
 DEFAULT_IMAGE = (
@@ -68,6 +74,103 @@ class VenuesService:
             raise NotFoundError("Venue not found")
         return [self._hall_out(h) for h in self.repository.list_halls(venue_id)]
 
+    def create_venue(self, payload: VenueCreate) -> VenueOut:
+        venue = Venue(
+            name=payload.name,
+            type=payload.type,
+            address=payload.address,
+            city=payload.city,
+            image=payload.image,
+            rating=payload.rating,
+            review_count=payload.review_count,
+            price_from=payload.price_from,
+            description=payload.description,
+            amenities=list(payload.amenities),
+            is_active=True,
+        )
+        self.db.add(venue)
+        self.db.commit()
+        self.db.refresh(venue)
+        return self._venue_out(venue)
+
+    def update_venue(self, venue_id: UUID, payload: VenueUpdate) -> VenueOut:
+        venue = self.repository.get_venue(venue_id)
+        if venue is None:
+            raise NotFoundError("Venue not found")
+        data = payload.model_dump(exclude_unset=True)
+        for key, value in data.items():
+            setattr(venue, key, value)
+        self.db.commit()
+        refreshed = self.repository.get_venue(venue_id)
+        assert refreshed is not None
+        return self._venue_out(refreshed)
+
+    def delete_venue(self, venue_id: UUID) -> None:
+        venue = self.repository.get_venue(venue_id)
+        if venue is None:
+            raise NotFoundError("Venue not found")
+        venue.is_active = False
+        self.db.commit()
+
+    def get_hall(self, hall_id: UUID) -> HallOut:
+        hall = self.repository.get_hall(hall_id)
+        if hall is None:
+            raise NotFoundError("Hall not found")
+        return self._hall_out(hall)
+
+    def create_hall(self, venue_id: UUID, payload: HallCreate) -> HallOut:
+        venue = self.repository.get_venue(venue_id)
+        if venue is None:
+            raise NotFoundError("Venue not found")
+        hall = Hall(
+            venue_id=venue_id,
+            name=payload.name,
+            capacity=payload.capacity,
+            area_sqft=payload.area_sqft,
+            floor=payload.floor,
+            price_per_hour=payload.price_per_hour,
+            price_half_day=payload.price_half_day,
+            price_full_day=payload.price_full_day,
+            amenities=list(payload.amenities),
+            image=payload.image,
+            available=payload.available,
+        )
+        self.db.add(hall)
+        self.db.commit()
+        self.db.refresh(hall)
+        return self._hall_out(hall)
+
+    def update_hall(self, hall_id: UUID, payload: HallUpdate) -> HallOut:
+        hall = self.repository.get_hall(hall_id)
+        if hall is None:
+            raise NotFoundError("Hall not found")
+        data = payload.model_dump(exclude_unset=True)
+        for key, value in data.items():
+            setattr(hall, key, value)
+        self.db.commit()
+        refreshed = self.repository.get_hall(hall_id)
+        assert refreshed is not None
+        return self._hall_out(refreshed)
+
+    def delete_hall(self, hall_id: UUID) -> None:
+        from sqlalchemy import func, select
+
+        hall = self.repository.get_hall(hall_id)
+        if hall is None:
+            raise NotFoundError("Hall not found")
+        active = int(
+            self.db.scalar(
+                select(func.count())
+                .select_from(HallBooking)
+                .where(HallBooking.hall_id == hall_id, HallBooking.status != "Cancelled")
+            )
+            or 0
+        )
+        if active:
+            raise ConflictError("Cannot delete a hall with active bookings")
+        self.db.delete(hall)
+        self.db.commit()
+
     def list_my_bookings(self, user: Profile) -> list[HallBookingOut]:
         return [
             self._booking_out(b)
@@ -91,7 +194,9 @@ class VenuesService:
             end_time=payload.end_time,
         )
 
-        total = self._price_for(hall, payload.duration_type, payload.add_ons)
+        total = self._price_for(
+            hall, payload.duration_type, payload.add_ons, payload.guest_count
+        )
         booking = HallBooking(
             user_id=user.id,
             venue_id=payload.venue_id,
@@ -110,17 +215,22 @@ class VenuesService:
             contact_email=payload.contact_email,
         )
         self.repository.create_booking(booking)
+        notify(
+            self.db,
+            user_id=user.id,
+            ntype="hall_booking_confirmed",
+            title="Hall booking confirmed",
+            message=f"{hall.name} at {venue.name} is confirmed.",
+        )
         self.db.commit()
-        created = self.repository.get_booking_for_user(booking.id, user.id)
+        created = self.repository.get_booking(booking.id)
         assert created is not None
         return self._booking_out(created)
 
     def update_booking(
         self, user: Profile, booking_id: UUID, payload: HallBookingUpdate
     ) -> HallBookingOut:
-        booking = self.repository.get_booking_for_user(booking_id, user.id)
-        if booking is None:
-            raise NotFoundError("Hall booking not found")
+        booking = self._load_booking(user, booking_id)
         if booking.status == "Cancelled":
             raise ConflictError("Cancelled bookings cannot be edited")
 
@@ -138,14 +248,17 @@ class VenuesService:
 
         hall = booking.hall or self.repository.get_hall(booking.hall_id)
         if hall is not None and (
-            "duration_type" in data or "add_ons" in data
+            "duration_type" in data or "add_ons" in data or "guest_count" in data
         ):
             booking.total = self._price_for(
-                hall, booking.duration_type, list(booking.add_ons or [])
+                hall,
+                booking.duration_type,
+                list(booking.add_ons or []),
+                booking.guest_count,
             )
 
         self.db.commit()
-        refreshed = self.repository.get_booking_for_user(booking_id, user.id)
+        refreshed = self.repository.get_booking(booking_id)
         assert refreshed is not None
         return self._booking_out(refreshed)
 
@@ -169,24 +282,51 @@ class VenuesService:
                 raise ConflictError("Hall is already booked for this time")
 
     def cancel_booking(self, user: Profile, booking_id: UUID) -> HallBookingOut:
-        booking = self.repository.get_booking_for_user(booking_id, user.id)
-        if booking is None:
-            raise NotFoundError("Hall booking not found")
+        booking = self._load_booking(user, booking_id)
         booking.status = "Cancelled"
+        notify(
+            self.db,
+            user_id=booking.user_id,
+            ntype="booking_cancelled",
+            title="Hall booking cancelled",
+            message=f"Your hall booking at {booking.venue.name if booking.venue else 'a venue'} was cancelled.",
+        )
         self.db.commit()
-        refreshed = self.repository.get_booking_for_user(booking_id, user.id)
+        refreshed = self.repository.get_booking(booking_id)
         assert refreshed is not None
         return self._booking_out(refreshed)
 
-    def _price_for(self, hall, duration_type: str, add_ons: list[str]) -> Decimal:
+    def _load_booking(self, user: Profile, booking_id: UUID) -> HallBooking:
+        booking = self.repository.get_booking(booking_id)
+        if booking is None:
+            raise NotFoundError("Hall booking not found")
+        if user.role != "admin" and booking.user_id != user.id:
+            raise ForbiddenError("Not allowed to modify this hall booking")
+        return booking
+
+    def _price_for(
+        self, hall, duration_type: str, add_ons: list[str], guest_count: int = 1
+    ) -> Decimal:
         if duration_type == "full-day":
             base = hall.price_full_day
         elif duration_type == "half-day":
             base = hall.price_half_day
         else:
             base = hall.price_per_hour * 3
-        # Simple add-on surcharge: 5000 each (matches FE demo pricing roughly)
-        surcharge = Decimal(5000) * len(add_ons)
+        surcharge = Decimal("0")
+        if add_ons:
+            from sqlalchemy import select
+
+            rows = list(self.db.scalars(select(AddOn).where(AddOn.id.in_(add_ons), AddOn.is_active.is_(True))).all())
+            found = {row.id for row in rows}
+            missing = [addon_id for addon_id in add_ons if addon_id not in found]
+            if missing:
+                raise ConflictError(f"Unknown add-on: {missing[0]}")
+            for row in rows:
+                if row.unit == "per_person":
+                    surcharge += Decimal(row.price) * guest_count
+                else:
+                    surcharge += Decimal(row.price)
         return Decimal(base) + surcharge
 
     def _venue_out(self, venue) -> VenueOut:

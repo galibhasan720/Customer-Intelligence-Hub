@@ -23,7 +23,8 @@ class Notification(Base):
     booking_id = mapped_column(
         UUID(as_uuid=True), ForeignKey("bookings.id"), nullable=True
     )
-    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     message: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     sent_at = mapped_column(DateTime(timezone=True), nullable=True)

@@ -6,7 +6,14 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.events.schemas import EventCreate, EventOut, EventUpdate
+from app.events.schemas import (
+    CategoryCreate,
+    CategoryOut,
+    CategoryUpdate,
+    EventCreate,
+    EventOut,
+    EventUpdate,
+)
 from app.events.service import EventsService
 from app.users.models import Profile
 
@@ -21,8 +28,8 @@ def list_mine(db: Session, organizer: Profile) -> list[EventOut]:
     return EventsService(db).list_mine(organizer)
 
 
-def get_event(db: Session, event_id: UUID) -> EventOut:
-    return EventsService(db).get(event_id)
+def get_event(db: Session, event_id: UUID, viewer: Profile | None = None) -> EventOut:
+    return EventsService(db).get(event_id, viewer)
 
 
 def create_event(db: Session, organizer: Profile, payload: EventCreate) -> EventOut:
@@ -37,3 +44,19 @@ def update_event(
 
 def delete_event(db: Session, organizer: Profile, event_id: UUID) -> None:
     EventsService(db).delete(organizer, event_id)
+
+
+def list_categories(db: Session) -> list[CategoryOut]:
+    return EventsService(db).list_categories()
+
+
+def create_category(db: Session, payload: CategoryCreate) -> CategoryOut:
+    return EventsService(db).create_category(payload)
+
+
+def update_category(db: Session, category_id: UUID, payload: CategoryUpdate) -> CategoryOut:
+    return EventsService(db).update_category(category_id, payload)
+
+
+def delete_category(db: Session, category_id: UUID) -> None:
+    EventsService(db).delete_category(category_id)

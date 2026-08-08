@@ -17,6 +17,8 @@ import {
   mapApiEvent,
   mapApiHall,
   mapApiHallBooking,
+  mapApiNotification,
+  mapApiProfile,
   mapApiVenue,
 } from "./lib/mappers";
 import type {
@@ -115,6 +117,27 @@ export default function App() {
     }
   },[]);
 
+  const refreshNotifications=useCallback(async()=>{
+    if(!getToken()){setNotifications(INITIAL_NOTIFICATIONS);return;}
+    try{
+      const rows=await api.listNotifications();
+      setNotifications(rows.map(mapApiNotification));
+    }catch{
+      /* keep local inbox if API is down */
+    }
+  },[]);
+
+  const refreshProfile=useCallback(async()=>{
+    if(!getToken())return;
+    try{
+      const me=await api.me();
+      setUserName(me.full_name);
+      setUserRole(me.role);
+      setUserEmail(me.email);
+      setOrganizerProfile(mapApiProfile(me));
+    }catch{/* ignore */}
+  },[]);
+
   const loadHallsForVenue=useCallback(async(venueId:string)=>{
     try{
       setHallsLoading(true);
@@ -153,11 +176,13 @@ export default function App() {
       setGuestEmail(stored.email);
       setOrganizerProfile(prev=>({...prev,name:stored.full_name,email:stored.email}));
       refreshHallBookings();
+      refreshNotifications();
+      refreshProfile();
     }
     api.health().catch(()=>toast.message("Backend not ready yet — start with npm run dev from repo root."));
     refreshEvents();
     refreshVenues();
-  },[refreshEvents,refreshVenues,refreshHallBookings]);
+  },[refreshEvents,refreshVenues,refreshHallBookings,refreshNotifications,refreshProfile]);
 
   useEffect(()=>{
     if(view==="dashboard"&&isLoggedIn) refreshHallBookings();
@@ -175,6 +200,8 @@ export default function App() {
     setGuestEmail(user.email);
     setOrganizerProfile(prev=>({...prev,name:user.full_name,email:user.email}));
     refreshHallBookings();
+    refreshNotifications();
+    refreshProfile();
   };
   const handleSignOut=()=>{clearSession();setIsLoggedIn(false);setUserName("");setUserRole("customer");setUserEmail("");setHallBookings([]);toast.info("You have been signed out.");};
   const requireAuth=()=>{if(!isLoggedIn){setShowAuthModal(true);return false;}return true;};
@@ -186,10 +213,10 @@ export default function App() {
     if(seatIds.length===0){toast.error("Missing seat IDs — reload seats and try again.");return;}
     try{
       setPaying(true);
-      await api.createBooking({event_id:selectedEvent.id,seat_ids:seatIds});
+      await api.createBooking({event_id:selectedEvent.id,seat_ids:seatIds,guest_name:guestName||userName,guest_email:guestEmail||userEmail});
       navigate("confirmation");
       toast.success("Booking confirmed!");
-      addNotification({type:"booking_confirmed",title:"Booking Confirmed",message:`Your booking for ${selectedEvent.title} is confirmed!`,timestamp:"Just now"});
+      refreshNotifications();
       refreshEvents();
     }catch(err){
       toast.error(err instanceof ApiError?err.message:"Booking failed");
@@ -222,7 +249,7 @@ export default function App() {
       setLastHallBooking(mapped);
       navigate("hall-confirmation");
       toast.success("Hall booking saved!");
-      addNotification({type:"hall_booking_confirmed",title:"Hall Booking Confirmed",message:`${mapped.hallName} at ${mapped.venueName} is confirmed.`,timestamp:"Just now"});
+      refreshNotifications();
     }catch(err){
       toast.error(err instanceof ApiError?err.message:"Hall booking failed");
     }finally{
@@ -322,7 +349,7 @@ export default function App() {
       <Toaster position="top-right" richColors closeButton/>
       <AnimatePresence>
         {showAuthModal&&<AuthModal key="auth" onClose={()=>setShowAuthModal(false)} onAuth={handleAuth}/>}
-        {showNotifications&&<NotificationPanel key="notif" notifications={notifications} onClose={()=>setShowNotifications(false)} onMarkAllRead={()=>setNotifications(prev=>prev.map(n=>({...n,read:true})))} onClearAll={()=>setNotifications([])} onMarkRead={id=>setNotifications(prev=>prev.map(n=>n.id===id?{...n,read:true}:n))}/>}
+        {showNotifications&&<NotificationPanel key="notif" notifications={notifications} onClose={()=>setShowNotifications(false)} onMarkAllRead={async()=>{try{await api.markAllNotificationsRead();}catch{/* local */}setNotifications(prev=>prev.map(n=>({...n,read:true})));}} onClearAll={async()=>{try{await api.clearNotifications();}catch{/* local */}setNotifications([]);}} onMarkRead={async id=>{try{await api.markNotificationRead(id);}catch{/* local */}setNotifications(prev=>prev.map(n=>n.id===id?{...n,read:true}:n));}}/>}
       </AnimatePresence>
       <Header view={view} isLoggedIn={isLoggedIn} userName={userName} userRole={userRole} unreadCount={unreadCount} isDark={isDark} onNav={navigate} onOpenAuth={()=>setShowAuthModal(true)} onSignOut={handleSignOut} onToggleNotifications={()=>setShowNotifications(!showNotifications)} onToggleDark={()=>setIsDark(d=>!d)}/>
       <main className="flex-1">
@@ -344,7 +371,7 @@ export default function App() {
             {view==="hall-booking"&&selectedVenue&&selectedHall&&<HallBookingView venue={selectedVenue} hall={selectedHall} busy={hallBookingBusy} onConfirm={handleHallConfirm} onBack={()=>navigate("venue-detail")}/>}
             {view==="hall-confirmation"&&lastHallBooking&&<HallConfirmationView booking={lastHallBooking} onBackVenues={()=>navigate("venue-browse")} onMyBookings={()=>navigate("dashboard")}/>}
             {view==="dashboard"&&<DashboardView hallBookings={hallBookings} halls={halls} onCancelHall={handleCancelHallBooking} onUpdateHall={handleUpdateHallBooking} addNotification={addNotification} isLoggedIn={isLoggedIn} onNeedAuth={()=>{setShowAuthModal(true);}}/>}
-            {view==="organizer"&&<OrganizerView events={allEvents} venues={venues} onAddEvent={handleAddEvent} onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent} profile={organizerProfile} onUpdateProfile={setOrganizerProfile}/>}
+            {view==="organizer"&&<OrganizerView events={allEvents} venues={venues} onAddEvent={handleAddEvent} onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent} profile={organizerProfile} onUpdateProfile={async p=>{try{const me=await api.updateMe({full_name:p.name,organization_name:p.organizationName,bio:p.bio,phone:p.phone,website:p.website,city:p.city,address:p.address});setOrganizerProfile(mapApiProfile(me));toast.success("Profile updated");}catch(err){toast.error(err instanceof ApiError?err.message:"Failed to update profile");setOrganizerProfile(p);}}}/>}
           </PageTransition>
         </AnimatePresence>
       </main>
