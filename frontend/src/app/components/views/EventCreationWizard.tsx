@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Plus, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Plus, Sparkles, Ticket, Trash2, Upload, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
 import { CATEGORY_GROUPS, SUGGESTED_TAGS_FEATURED, SUGGESTED_TAGS_MORE } from "../../lib/constants";

@@ -26,7 +26,14 @@ export function generateSeats(): Seat[] {
 
 export function cx(...c: (string|boolean|undefined|null)[]): string { return c.filter(Boolean).join(" "); }
 export function getInitials(name: string): string { return name.split(" ").map(n=>n[0]).slice(0,2).join("").toUpperCase(); }
-export function statusColor(s: Booking["status"]) { return {Confirmed:"bg-green-100 text-green-700",Pending:"bg-amber-100 text-amber-700",Cancelled:"bg-red-100 text-red-700",Expired:"bg-slate-100 text-slate-500"}[s]; }
+export function statusColor(s: Booking["status"]) {
+  return {
+    Confirmed: "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-300",
+    Pending: "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+    Cancelled: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+    Expired: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+  }[s];
+}
 export function seatFill(s: SeatStatus) {
   const m: Record<SeatStatus,{fill:string;stroke:string;interactive:boolean}> = {
     available:{fill:"#DBEAFE",stroke:"#60A5FA",interactive:true}, selected:{fill:"#22C55E",stroke:"#16A34A",interactive:true},
