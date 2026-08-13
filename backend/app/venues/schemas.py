@@ -9,6 +9,59 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class VenueCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    type: str = Field(min_length=1, max_length=100)
+    address: str = Field(min_length=1, max_length=255)
+    city: str = Field(default="Dhaka", max_length=100)
+    image: str | None = None
+    rating: float = 0
+    review_count: int = 0
+    price_from: float = 0
+    description: str = ""
+    amenities: list[str] = Field(default_factory=list)
+
+
+class VenueUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    type: str | None = Field(default=None, min_length=1, max_length=100)
+    address: str | None = Field(default=None, min_length=1, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    image: str | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    price_from: float | None = None
+    description: str | None = None
+    amenities: list[str] | None = None
+    is_active: bool | None = None
+
+
+class HallCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    capacity: int = 0
+    area_sqft: int = 0
+    floor: int = 1
+    price_per_hour: float = 0
+    price_half_day: float = 0
+    price_full_day: float = 0
+    amenities: list[str] = Field(default_factory=list)
+    image: str | None = None
+    available: bool = True
+
+
+class HallUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    capacity: int | None = None
+    area_sqft: int | None = None
+    floor: int | None = None
+    price_per_hour: float | None = None
+    price_half_day: float | None = None
+    price_full_day: float | None = None
+    amenities: list[str] | None = None
+    image: str | None = None
+    available: bool | None = None
+
+
 class VenueOut(BaseModel):
     id: UUID
     name: str

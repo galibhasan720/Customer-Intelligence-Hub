@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BadgeCheck, BarChart2, Check, Edit2, Eye, Globe, Phone, Plus, Settings, Sparkles, Ticket, Trash2, TrendingDown, TrendingUp, Users, XCircle } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { toast } from "sonner";
+import { api, type ApiAnalyticsOverview } from "../../../lib/api";
 import { Badge, Field, PageHeader, StarsRow, Surface } from "../atoms";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { EventDeleteConfirmModal } from "../modals/EventDeleteConfirmModal";
@@ -27,7 +28,7 @@ export function OrganizerView({
   onUpdateEvent: (e: SeatFlowEvent) => void;
   onDeleteEvent: (id: string) => void;
   profile: OrganizerProfile;
-  onUpdateProfile: (p: OrganizerProfile) => void;
+  onUpdateProfile: (p: OrganizerProfile) => void | Promise<void>;
 }) {
   const [tab, setTab] = useState<"analytics" | "events" | "profile">("analytics");
   const [showWizard, setShowWizard] = useState(false);
@@ -35,9 +36,20 @@ export function OrganizerView({
   const [editingEvent, setEditingEvent] = useState<SeatFlowEvent | null>(null);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
   const [localProfile, setLocalProfile] = useState<OrganizerProfile>(profile);
-  const saveProfile = () => {
-    onUpdateProfile(localProfile);
-    toast.success("Profile updated successfully!");
+  const [analytics, setAnalytics] = useState<ApiAnalyticsOverview | null>(null);
+  useEffect(() => { setLocalProfile(profile); }, [profile]);
+  useEffect(() => {
+    let cancelled = false;
+    api.analyticsOverview()
+      .then((data) => { if (!cancelled) setAnalytics(data); })
+      .catch(() => { if (!cancelled) setAnalytics(null); });
+    return () => { cancelled = true; };
+  }, []);
+  const trend = analytics?.weekly_trend?.length ? analytics.weekly_trend : BOOKING_TREND;
+  const statusSlices = analytics?.status_breakdown?.length ? analytics.status_breakdown : BOOKING_STATUS;
+  const revenueRows = analytics?.revenue_by_event?.length ? analytics.revenue_by_event : REVENUE_DATA;
+  const saveProfile = async () => {
+    await onUpdateProfile(localProfile);
   };
   const updateField = (field: keyof OrganizerProfile, value: string | boolean) => setLocalProfile((prev) => ({ ...prev, [field]: value }));
   return (
@@ -92,14 +104,20 @@ export function OrganizerView({
       {tab === "analytics" && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { label: "Total Bookings", value: "223", delta: "+12%", positive: true, icon: Ticket },
-              { label: "Seats Sold", value: "329 / 480", delta: "68.5%", positive: true, icon: Users },
-              { label: "Est. Revenue", value: "৳18,420", delta: "+8.3%", positive: true, icon: BarChart2 },
-              { label: "Cancellation Rate", value: "4.2%", delta: "-0.8%", positive: true, icon: XCircle },
-              { label: "Active Events", value: String(events.length), delta: "+1 this month", positive: true, icon: Sparkles },
-              { label: "Avg. Ticket Price", value: "৳987", delta: "+৳43", positive: true, icon: Ticket },
-            ].map(({ label, value, delta, positive, icon: Icon }) => (
+            {(() => {
+              const sold = analytics?.seats_sold ?? 329;
+              const available = analytics?.seats_available ?? 151;
+              const seatTotal = sold + available;
+              const revenue = analytics?.estimated_revenue ?? 18420;
+              return [
+                { label: "Total Bookings", value: String(analytics?.total_bookings ?? 223), delta: analytics ? "live" : "+12%", positive: true, icon: Ticket },
+                { label: "Seats Sold", value: `${sold} / ${seatTotal}`, delta: seatTotal ? `${Math.round((sold / seatTotal) * 1000) / 10}%` : "0%", positive: true, icon: Users },
+                { label: "Est. Revenue", value: `৳${Number(revenue).toLocaleString()}`, delta: analytics ? "live" : "+8.3%", positive: true, icon: BarChart2 },
+                { label: "Cancellation Rate", value: `${analytics?.cancellation_rate ?? 4.2}%`, delta: analytics ? "live" : "-0.8%", positive: (analytics?.cancellation_rate ?? 4.2) <= 10, icon: XCircle },
+                { label: "Upcoming Events", value: String(analytics?.upcoming_events ?? events.length), delta: analytics ? "live" : "+1 this month", positive: true, icon: Sparkles },
+                { label: "Avg. Ticket Price", value: sold ? `৳${Math.round(Number(revenue) / sold)}` : "৳0", delta: analytics ? "live" : "+৳43", positive: true, icon: Ticket },
+              ];
+            })().map(({ label, value, delta, positive, icon: Icon }) => (
               <Surface raised key={label} className="p-5">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs text-muted-foreground font-medium">{label}</p>
@@ -117,12 +135,12 @@ export function OrganizerView({
             <Surface raised className="p-5">
               <h3 className="font-display font-bold text-sm text-foreground mb-1">Bookings This Week</h3>
               <p className="text-xs text-muted-foreground mb-4">
-                This week total: <span className="font-semibold text-foreground">223 bookings</span>
+                This week total: <span className="font-semibold text-foreground">{trend.reduce((sum, d) => sum + d.bookings, 0)} bookings</span>
               </p>
               <div className="flex items-end gap-2 h-44">
                 {(() => {
-                  const max = Math.max(...BOOKING_TREND.map((d) => d.bookings));
-                  return BOOKING_TREND.map((d) => (
+                  const max = Math.max(1, ...trend.map((d) => d.bookings));
+                  return trend.map((d) => (
                     <div key={d.day} className="flex flex-col items-center gap-1.5 flex-1">
                       <span className="text-xs font-semibold text-muted-foreground">{d.bookings}</span>
                       <div className="w-full rounded-t-lg bg-primary/55" style={{ height: `${Math.round((d.bookings / max) * 120)}px`, background: d.bookings === max ? "var(--primary)" : undefined }} />
@@ -137,14 +155,27 @@ export function OrganizerView({
               <h3 className="font-display font-bold text-sm text-foreground mb-4">Booking Status Distribution</h3>
               <div className="flex items-center gap-6">
                 <div className="relative shrink-0 w-32 h-32">
-                  <div className="w-32 h-32 rounded-full" style={{ background: "conic-gradient(#16A34A 0% 78%, #D97706 78% 92%, #DC2626 92% 100%)" }} />
+                  <div
+                    className="w-32 h-32 rounded-full"
+                    style={{
+                      background: (() => {
+                        let acc = 0;
+                        const stops = statusSlices.map((s) => {
+                          const start = acc;
+                          acc += Number(s.value) || 0;
+                          return `${s.color} ${start}% ${acc}%`;
+                        });
+                        return `conic-gradient(${stops.join(", ") || "#e2e8f0 0% 100%"})`;
+                      })(),
+                    }}
+                  />
                   <div className="absolute inset-3 rounded-full bg-card flex flex-col items-center justify-center">
-                    <p className="text-base font-extrabold text-foreground leading-tight">223</p>
+                    <p className="text-base font-extrabold text-foreground leading-tight">{analytics?.total_bookings ?? 223}</p>
                     <p className="text-xs text-muted-foreground">total</p>
                   </div>
                 </div>
                 <div className="space-y-3 flex-1">
-                  {BOOKING_STATUS.map((s) => (
+                  {statusSlices.map((s) => (
                     <div key={s.label} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
@@ -163,21 +194,23 @@ export function OrganizerView({
           <Surface raised className="p-5">
             <h3 className="font-display font-bold text-sm text-foreground mb-4">Revenue by Event</h3>
             <div className="space-y-4">
-              {REVENUE_DATA.map((d) => {
-                const pct = Math.round((d.revenue / d.target) * 100);
+              {revenueRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No revenue data yet.</p>
+              ) : revenueRows.map((d) => {
+                const pct = Math.round((d.revenue / Math.max(1, d.target)) * 100);
                 return (
                   <div key={d.event}>
                     <div className="flex justify-between items-baseline mb-1.5">
                       <span className="text-sm font-medium text-foreground truncate max-w-[60%]">{d.event}</span>
                       <div className="text-right shrink-0 ml-2">
                         <span className="text-sm font-bold" style={{ color: d.color }}>
-                          ৳{d.revenue.toLocaleString()}
+                          ৳{Number(d.revenue).toLocaleString()}
                         </span>
-                        <span className="text-xs text-muted-foreground ml-1">/ ৳{d.target.toLocaleString()}</span>
+                        <span className="text-xs text-muted-foreground ml-1">/ ৳{Number(d.target).toLocaleString()}</span>
                       </div>
                     </div>
                     <div className="h-2.5 rounded-full overflow-hidden bg-muted">
-                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: d.color }} />
+                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, pct)}%`, background: d.color }} />
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{pct}% of target</p>
                   </div>

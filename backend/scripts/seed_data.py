@@ -21,6 +21,7 @@ from app.database.session import SessionLocal  # noqa: E402
 from app.events.models import Category, Event  # noqa: E402
 from app.seats.models import Seat  # noqa: E402
 from app.users.models import Profile  # noqa: E402
+from app.addons.models import AddOn
 from app.venues.models import Hall, Venue  # noqa: E402
 
 import app.bookings.models  # noqa: E402, F401
@@ -40,6 +41,20 @@ DEMO_USERS = [
         "full_name": "Demo Customer",
         "role": "customer",
     },
+    {
+        "email": "admin@example.com",
+        "full_name": "Demo Admin",
+        "role": "admin",
+    },
+]
+
+DEMO_ADD_ONS = [
+    ("catering", "Catering Service", "500", "per_person"),
+    ("av", "AV Equipment Setup", "5000", "flat"),
+    ("decoration", "Stage Decoration", "15000", "flat"),
+    ("photography", "Photography Package", "10000", "flat"),
+    ("security", "Security Personnel", "3000", "flat"),
+    ("valet", "Valet Parking", "2000", "flat"),
 ]
 
 DEMO_CATEGORIES = [
@@ -296,6 +311,24 @@ def _ensure_event_with_seats(
     print(f"  + event {spec['title']} ({len(seats)} seats)")
 
 
+def _ensure_add_ons(db) -> None:
+    for addon_id, label, price, unit in DEMO_ADD_ONS:
+        row = db.get(AddOn, addon_id)
+        if row is None:
+            db.add(
+                AddOn(
+                    id=addon_id,
+                    label=label,
+                    price=Decimal(price),
+                    unit=unit,
+                    is_active=True,
+                )
+            )
+            print(f"  + add-on {addon_id}")
+        else:
+            print(f"  = add-on exists: {addon_id}")
+
+
 def seed() -> int:
     settings = get_settings()
     if is_placeholder_database_url(settings.database_url) or SessionLocal is None:
@@ -333,11 +366,16 @@ def seed() -> int:
         print("Seeding venues/halls...")
         _ensure_venues(db)
         db.commit()
+
+        print("Seeding add-ons...")
+        _ensure_add_ons(db)
+        db.commit()
         print("Seed complete.")
         print(
             "Demo logins:\n"
             f"  organizer@example.com / {DEMO_PASSWORD}\n"
-            f"  customer@example.com / {DEMO_PASSWORD}"
+            f"  customer@example.com / {DEMO_PASSWORD}\n"
+            f"  admin@example.com / {DEMO_PASSWORD}"
         )
         return 0
     except Exception as exc:  # noqa: BLE001

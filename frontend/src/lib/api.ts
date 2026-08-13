@@ -56,6 +56,47 @@ export type ApiUser = {
   full_name: string;
   email: string;
   role: string;
+  is_active?: boolean;
+  organization_name?: string | null;
+  bio?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  city?: string | null;
+  address?: string | null;
+  verified?: boolean;
+  events_created?: number;
+  total_bookings?: number;
+  member_since?: string | null;
+};
+
+export type ApiNotification = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  status: string;
+  read: boolean;
+  created_at: string;
+};
+
+export type ApiAddOn = {
+  id: string;
+  label: string;
+  price: number;
+  unit: "flat" | "per_person" | string;
+  is_active: boolean;
+};
+
+export type ApiAnalyticsOverview = {
+  total_bookings: number;
+  seats_sold: number;
+  seats_available: number;
+  cancellation_rate: number;
+  upcoming_events: number;
+  estimated_revenue: number;
+  weekly_trend: { day: string; bookings: number }[];
+  status_breakdown: { label: string; value: number; color: string }[];
+  revenue_by_event: { event: string; revenue: number; target: number; color: string }[];
 };
 
 export type AuthResponse = {
@@ -123,6 +164,10 @@ export const api = {
       body: JSON.stringify(body),
     }),
   me: () => request<ApiUser>("/api/v1/users/me", {}, true),
+  updateMe: (body: Record<string, unknown>) =>
+    request<ApiUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(body) }, true),
+  changePassword: (body: { current_password: string; new_password: string }) =>
+    request<void>("/api/v1/users/me/password", { method: "POST", body: JSON.stringify(body) }, true),
   listEvents: (params?: { q?: string; category?: string }) => {
     const qs = new URLSearchParams();
     if (params?.q) qs.set("q", params.q);
@@ -146,14 +191,42 @@ export const api = {
     request<void>(`/api/v1/events/${id}`, { method: "DELETE" }, true),
   listSeats: (eventId: string) =>
     request<ApiSeat[]>(`/api/v1/events/${eventId}/seats`),
+  holdSeats: (eventId: string, seatIds: string[]) =>
+    request<ApiSeat[]>(`/api/v1/events/${eventId}/seats/hold`, {
+      method: "POST",
+      body: JSON.stringify({ seat_ids: seatIds }),
+    }, true),
+  releaseSeats: (eventId: string, seatIds: string[]) =>
+    request<ApiSeat[]>(`/api/v1/events/${eventId}/seats/release`, {
+      method: "POST",
+      body: JSON.stringify({ seat_ids: seatIds }),
+    }, true),
   myBookings: () => request<ApiBooking[]>("/api/v1/bookings/me", {}, true),
-  createBooking: (body: { event_id: string; seat_ids: string[] }) =>
+  getBooking: (id: string) => request<ApiBooking>(`/api/v1/bookings/${id}`, {}, true),
+  createBooking: (body: { event_id: string; seat_ids: string[]; guest_name?: string; guest_email?: string }) =>
     request<ApiBooking>("/api/v1/bookings", {
       method: "POST",
       body: JSON.stringify(body),
     }, true),
+  updateBooking: (id: string, body: { guest_name?: string; guest_email?: string }) =>
+    request<ApiBooking>(`/api/v1/bookings/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }, true),
   cancelBooking: (id: string) =>
     request<ApiBooking>(`/api/v1/bookings/${id}/cancel`, { method: "POST" }, true),
+  listNotifications: (unreadOnly = false) =>
+    request<ApiNotification[]>(`/api/v1/notifications${unreadOnly ? "?unread_only=true" : ""}`, {}, true),
+  markNotificationRead: (id: string) =>
+    request<ApiNotification>(`/api/v1/notifications/${id}/read`, { method: "PATCH" }, true),
+  markAllNotificationsRead: () =>
+    request<void>("/api/v1/notifications/read-all", { method: "POST" }, true),
+  clearNotifications: () =>
+    request<void>("/api/v1/notifications", { method: "DELETE" }, true),
+  listAddOns: () => request<ApiAddOn[]>("/api/v1/add-ons"),
+  analyticsOverview: () => request<ApiAnalyticsOverview>("/api/v1/analytics/overview", {}, true),
+  listCategories: () => request<{ id: string; name: string; description: string | null; is_active: boolean }[]>("/api/v1/categories"),
+  myPayments: () => request<{ id: string; amount: number; status: string; method: string }[]>("/api/v1/payments/me", {}, true),
 
   listVenues: () => request<ApiVenue[]>("/api/v1/venues"),
   getVenue: (id: string) => request<ApiVenue>(`/api/v1/venues/${id}`),

@@ -1,5 +1,7 @@
 # Backend docs
 
+- [Authentication & RBAC](authentication.md)
+- [API endpoints](api_endpoints.md)
 - [Architecture (Vercel + HF + Supabase)](architecture.md)
 - [Database schema](database_schema.md)
 - [Phase A Supabase setup (manual)](PHASE_A_SUPABASE_SETUP.md)

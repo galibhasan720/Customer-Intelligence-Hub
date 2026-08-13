@@ -23,6 +23,8 @@ class Booking(Base):
         UUID(as_uuid=True), ForeignKey("events.id"), nullable=False
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="Pending")
+    guest_name = mapped_column(String(255), nullable=True)
+    guest_email = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -7,13 +7,19 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import require_organizer
+from app.core.dependencies import get_current_user_optional, require_organizer
 from app.database.session import get_db
 from app.events import controller
-from app.events.schemas import EventCreate, EventOut, EventUpdate
+from app.events.schemas import CategoryOut, EventCreate, EventOut, EventUpdate
 from app.users.models import Profile
 
 router = APIRouter(prefix="/events", tags=["events"])
+categories_router = APIRouter(prefix="/categories", tags=["categories"])
+
+
+@categories_router.get("", response_model=list[CategoryOut])
+def list_categories(db: Session = Depends(get_db)) -> list[CategoryOut]:
+    return controller.list_categories(db)
 
 
 @router.get("", response_model=list[EventOut])
@@ -34,8 +40,12 @@ def list_my_events(
 
 
 @router.get("/{event_id}", response_model=EventOut)
-def get_event(event_id: UUID, db: Session = Depends(get_db)) -> EventOut:
-    return controller.get_event(db, event_id)
+def get_event(
+    event_id: UUID,
+    db: Session = Depends(get_db),
+    viewer: Profile | None = Depends(get_current_user_optional),
+) -> EventOut:
+    return controller.get_event(db, event_id, viewer)
 
 
 @router.post("", response_model=EventOut, status_code=status.HTTP_201_CREATED)

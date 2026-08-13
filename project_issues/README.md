@@ -5,6 +5,7 @@ Canonical stack: **Vercel (React)** · **Hugging Face Space (FastAPI Docker)** �
 
 | File | Feature(s) | GitHub |
 |------|------------|--------|
+| [STATUS.md](./STATUS.md) | Leftover / done checklist | open + closed |
 | [00_roadmap-handoff-summary.md](./00_roadmap-handoff-summary.md) | Roadmap index | — |
 | [01_architecture-and-mvc-foundation.md](./01_architecture-and-mvc-foundation.md) | 0 | #55 |
 | [02_supabase-schema-and-models.md](./02_supabase-schema-and-models.md) | 1 | #40 |
@@ -17,12 +18,12 @@ Canonical stack: **Vercel (React)** · **Hugging Face Space (FastAPI Docker)** �
 | [09_seat-capacity-and-categories.md](./09_seat-capacity-and-categories.md) | 7 | #48 |
 | [10_seat-selection-and-concurrency.md](./10_seat-selection-and-concurrency.md) | 8 | #45 |
 | [11_booking-lifecycle-history-and-cancellation.md](./11_booking-lifecycle-history-and-cancellation.md) | 9–11 | #46 |
-| [12_notifications-and-reminders.md](./12_notifications-and-reminders.md) | 12 | #47 |
+| [12_notifications-and-reminders.md](./12_notifications-and-reminders.md) | 12 | #47 closed |
 | [13_analytics-dashboard.md](./13_analytics-dashboard.md) | 13 | #49 |
 | [14_admin-governance-and-category-management.md](./14_admin-governance-and-category-management.md) | 14 | #50 |
 | [15_testing-strategy-unit-and-integration.md](./15_testing-strategy-unit-and-integration.md) | tests | #51 |
 | [16_deployment-vercel-hf-supabase.md](./16_deployment-vercel-hf-supabase.md) | 15 | #52 |
-| [17_api-contract-openapi.md](./17_api-contract-openapi.md) | contract | #42 |
+| [17_api-contract-openapi.md](./17_api-contract-openapi.md) | contract | #42 closed |
 
 ## Related MVP docs
 

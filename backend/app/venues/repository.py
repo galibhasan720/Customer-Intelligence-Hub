@@ -85,6 +85,14 @@ class VenuesRepository:
             stmt = stmt.where(HallBooking.id != exclude_booking_id)
         return list(self.db.scalars(stmt).all())
 
+    def get_booking(self, booking_id: UUID) -> HallBooking | None:
+        stmt = (
+            select(HallBooking)
+            .where(HallBooking.id == booking_id)
+            .options(joinedload(HallBooking.venue), joinedload(HallBooking.hall))
+        )
+        return self.db.scalars(stmt).unique().first()
+
     def create_booking(self, booking: HallBooking) -> HallBooking:
         self.db.add(booking)
         self.db.flush()

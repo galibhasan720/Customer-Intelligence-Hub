@@ -55,16 +55,40 @@ export function SeatSelectionView({ event, onContinue, onBack }: { event: SeatFl
       });
     });
   }, []);
+  const selectedApiIds = () =>
+    seats.filter((s) => s.status === "selected").map((s) => s.apiId).filter(Boolean) as string[];
+
+  const persistHold = async () => {
+    const ids = selectedApiIds();
+    if (!ids.length) {
+      setShowHoldModal(true);
+      return;
+    }
+    try {
+      await api.holdSeats(event.id, ids);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setShowHoldModal(true);
+        return;
+      }
+      toast.error(err instanceof ApiError ? err.message : "Could not hold seats");
+      return;
+    }
+    setShowHoldModal(true);
+  };
+
   const releaseSeat = useCallback(() => {
-    setSeats((prev) =>
-      prev.map((s) => {
+    setSeats((prev) => {
+      const ids = prev.filter((s) => s.status === "selected").map((s) => s.apiId).filter(Boolean) as string[];
+      if (ids.length) api.releaseSeats(event.id, ids).catch(() => undefined);
+      return prev.map((s) => {
         if (s.status !== "selected") return s;
         const r: SeatStatus = s.category === "VIP" ? "vip-available" : "available";
         return { ...s, status: r };
-      }),
-    );
+      });
+    });
     setShowHoldModal(false);
-  }, []);
+  }, [event.id]);
 
   const rows = useMemo(() => {
     const map = new Map<string, Seat[]>();
@@ -194,7 +218,7 @@ export function SeatSelectionView({ event, onContinue, onBack }: { event: SeatFl
             <button
               type="button"
               disabled={selected.length === 0}
-              onClick={() => selected.length > 0 && setShowHoldModal(true)}
+              onClick={() => selected.length > 0 && void persistHold()}
               className={cx(
                 "w-full py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 selected.length > 0 ? "bg-primary text-white hover:bg-primary/90" : "bg-muted text-muted-foreground cursor-not-allowed",

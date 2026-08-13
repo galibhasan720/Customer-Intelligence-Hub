@@ -1,17 +1,13 @@
-"""Controller layer for the analytics domain.
-
-Analytics stubs (Feature 13).
-"""
+"""Analytics controller."""
 
 from __future__ import annotations
 
+from sqlalchemy.orm import Session
+
+from app.analytics.schemas import AnalyticsOverview
 from app.analytics.service import AnalyticsService
+from app.users.models import Profile
 
-_service = AnalyticsService()
 
-
-def ping() -> dict[str, str]:
-    """Health-style stub used to verify MVC wiring."""
-    payload = _service.ping()
-    payload["layer"] = "controller"
-    return payload
+def overview(db: Session, user: Profile) -> AnalyticsOverview:
+    return AnalyticsService(db).overview(user)

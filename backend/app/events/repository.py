@@ -49,6 +49,27 @@ class EventsRepository:
         )
         return self.db.scalars(stmt).unique().first()
 
+    def list_categories(self, *, active_only: bool = True) -> list[Category]:
+        stmt = select(Category)
+        if active_only:
+            stmt = stmt.where(Category.is_active.is_(True))
+        stmt = stmt.order_by(Category.name.asc())
+        return list(self.db.scalars(stmt).all())
+
+    def get_category(self, category_id: UUID) -> Category | None:
+        return self.db.get(Category, category_id)
+
+    def get_category_by_name(self, name: str) -> Category | None:
+        return self.db.scalar(select(Category).where(Category.name == name))
+
+    def event_count_for_category(self, category_id: UUID) -> int:
+        return int(
+            self.db.scalar(
+                select(func.count()).select_from(Event).where(Event.category_id == category_id)
+            )
+            or 0
+        )
+
     def get_or_create_category(self, name: str) -> Category:
         row = self.db.scalar(select(Category).where(Category.name == name))
         if row is None:
